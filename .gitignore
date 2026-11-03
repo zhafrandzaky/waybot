@@ -1,0 +1,5 @@
+/target
+.env
+*.log
+docs/research-probe/__pycache__/
+.DS_Store
