@@ -956,6 +956,7 @@ mod tests {
             profile: None,
             ocr: OcrMode::Auto,
             vision: false,
+            resume: false,
             agent: false,
             wait_max_min: 0,
             jeda_min_ms: 2500,

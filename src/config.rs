@@ -61,6 +61,9 @@ pub struct Cli {
     /// Lewati layar konfirmasi (butuh room, nama, durasi).
     #[arg(long)]
     pub yes: bool,
+    /// Lanjutkan sesi room yang sama bila masih segar (default: sesi baru).
+    #[arg(long)]
+    pub resume: bool,
     /// Matikan agen halaman AI (default aktif sebagai cadangan).
     #[arg(long = "no-agent")]
     pub no_agent: bool,
@@ -88,6 +91,7 @@ pub struct AppConfig {
     pub profile: Option<PathBuf>,
     pub ocr: OcrMode,
     pub vision: bool,
+    pub resume: bool,
     pub agent: bool,
     pub wait_max_min: u64,
     pub jeda_min_ms: u64,
@@ -244,6 +248,7 @@ impl AppConfig {
             profile,
             ocr,
             vision,
+            resume: cli.resume,
             agent: !cli.no_agent,
             wait_max_min,
             jeda_min_ms,
