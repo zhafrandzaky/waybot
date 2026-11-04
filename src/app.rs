@@ -424,6 +424,10 @@ fn run(
             std::thread::sleep(Duration::from_millis(400));
             continue;
         };
+        if !state.url.contains("/join/game/") {
+            std::thread::sleep(Duration::from_millis(500));
+            continue;
+        }
         if state.options.is_empty() && state.inputs.is_empty() {
             std::thread::sleep(Duration::from_millis(400));
             continue;
@@ -1312,6 +1316,9 @@ fn last_session_path(root: &std::path::Path) -> std::path::PathBuf {
 }
 
 fn remember_session(root: &std::path::Path, config: &SessionConfig, url: &str) {
+    if !(url.contains("/join/game/") || url.contains("/join/pre-game/")) {
+        return;
+    }
     let value = json!({
         "room": config.room,
         "name": config.name,
@@ -1341,11 +1348,21 @@ fn try_resume(
         .map(|t| crate::store::now_ms().saturating_sub(t) < 15 * 60 * 1000)
         .unwrap_or(false);
     let url = value.get("url").and_then(|v| v.as_str()).unwrap_or("");
-    if !room_ok || !fresh || !url.contains("wayground.com/join") {
+    let playable = url.contains("/join/game/") || url.contains("/join/pre-game/");
+    if !room_ok || !fresh || !playable {
         return false;
     }
     events::log(tx, Level::Info, format!("resume sesi sebelumnya: {url}"));
     if browser.navigate(url).is_err() {
+        return false;
+    }
+    let path = browser
+        .mn
+        .script("return String(location.pathname);", json!([]))
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_default();
+    if path == "/join" {
         return false;
     }
     browser.enter_fullscreen();
