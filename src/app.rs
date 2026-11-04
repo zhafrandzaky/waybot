@@ -664,7 +664,24 @@ fn run(
         }
 
         let action_ms = took.elapsed().as_millis() as u64;
+        // Record the attempt immediately: grading happens at submit, not at ack.
+        rt.store.append_event(
+            "answer",
+            json!({"qid": question.id, "source": answer.source.label(), "action_ms": action_ms}),
+        );
+        events::file_log(
+            "timing",
+            &format!("qid={} action_ms={action_ms} attempt", question.id),
+        );
+        if !fingerprint.is_empty() {
+            answered_fingerprints.insert(fingerprint.clone());
+        }
+
         let mut acked = wait_ack(&mut browser, &qid, &mut rt.metrics);
+        rt.store.append_event(
+            "ack",
+            json!({"qid": question.id, "acked": acked, "answer_ms": took.elapsed().as_millis()}),
+        );
         if !acked
             && rt.agent
             && !agent_acted
@@ -695,8 +712,8 @@ fn run(
         answered += 1;
         cursor += 1;
         rt.store.append_event(
-            "answer",
-            json!({"qid": question.id, "source": answer.source.label(), "acked": acked, "action_ms": action_ms, "answer_ms": took.elapsed().as_millis()}),
+            "result",
+            json!({"qid": question.id, "acked": acked, "answer_ms": took.elapsed().as_millis()}),
         );
         events::file_log(
             "timing",
@@ -709,13 +726,11 @@ fn run(
 
         if acked {
             last_answer_at = Instant::now();
-            if !fingerprint.is_empty() {
-                answered_fingerprints.insert(fingerprint.clone());
-            }
             advance(&mut browser, &qid, &mut rt.metrics, &rt.store, &rt.aborted);
         } else {
             let tries = attempts.entry(qid.clone()).or_insert(0);
             *tries += 1;
+            answered_fingerprints.remove(&fingerprint);
             if *tries < 3 {
                 visited.remove(&qid);
                 current_id = None;
