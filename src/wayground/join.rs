@@ -187,6 +187,7 @@ pub fn join(browser: &mut Browser, code: &str, name: &str, tx: &Tx) -> Result<()
             Level::Info,
             "nama sudah diingat browser; mencoba Resume attempt",
         );
+        ensure_name(browser, name, tx);
         let _ = click_text_button(browser, &["resume attempt", "resume", "start", "lanjut"]);
         let mut tried_url = false;
         let mut entered = false;
@@ -214,6 +215,15 @@ pub fn join(browser: &mut Browser, code: &str, name: &str, tx: &Tx) -> Result<()
         }
         if entered {
             log(tx, Level::Info, "masuk halaman game");
+            if let Ok(state) = dom::snapshot(&mut browser.mn)
+                && !state.body_excerpt.contains(name)
+            {
+                log(
+                    tx,
+                    Level::Warn,
+                    format!("nama {:?} tidak terlihat di halaman game", name),
+                );
+            }
         }
     }
 
@@ -298,6 +308,65 @@ fn resolve_start_button(browser: &mut Browser) -> Option<String> {
         }
     }
     None
+}
+
+fn name_field(browser: &mut Browser) -> Option<String> {
+    let script = r#"
+const visible = (e) => { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 4 && r.height > 4 && st.visibility !== 'hidden' && st.display !== 'none'; };
+const el = [...document.querySelectorAll('input[type=text], input:not([type])')]
+  .filter(visible)
+  .find((e) => !(e.getAttribute('data-cy') || '').includes('gamecode'));
+if (!el) return null;
+const cy = el.getAttribute('data-cy');
+if (cy) return 'input[data-cy="' + cy + '"]';
+const name = el.getAttribute('name');
+if (name) return 'input[name="' + name + '"]';
+return 'input[type=text]';
+"#;
+    browser
+        .mn
+        .script(script, serde_json::json!([]))
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_string))
+}
+
+/// Force the typed name onto the pre-game screen, even when the browser remembers one.
+fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
+    for attempt in 0..3 {
+        if let Some(css) = name_field(browser) {
+            if input::type_selector(&mut browser.mn, &css, name).is_ok() {
+                let value = browser
+                    .mn
+                    .script(
+                        "const e=document.querySelector(arguments[0]); return e ? e.value : '';",
+                        serde_json::json!([css]),
+                    )
+                    .ok()
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .unwrap_or_default();
+                log(tx, Level::Info, format!("nama diisi ulang: {value:?}"));
+                if value.trim() == name {
+                    return;
+                }
+            }
+        } else {
+            // The name may be shown as text; click it to reveal the editor.
+            let _ = browser.mn.script(
+                "const el=[...document.querySelectorAll('div,span,button')].find(e=>/your wayground name is|nama/i.test((e.innerText||'')) && (e.innerText||'').length<80); if(el){el.click(); return true;} return false;",
+                serde_json::json!([]),
+            );
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        if attempt == 2 {
+            log(
+                tx,
+                Level::Warn,
+                format!(
+                    "field nama tidak ditemukan; memakai nama tersimpan browser (bisa berbeda dari {name:?})"
+                ),
+            );
+        }
+    }
 }
 
 fn game_url_from(browser: &mut Browser) -> Option<String> {
