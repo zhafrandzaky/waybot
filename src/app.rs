@@ -450,16 +450,10 @@ fn run(
                     );
                     std::thread::sleep(Duration::from_millis(800));
                     crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
-                    let _ = crate::wayground::join::click_text_button(
-                        &mut browser,
-                        &["start", "lanjut"],
-                    );
+                    let _ = crate::wayground::join::click_start(&mut browser);
                 } else {
                     crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
-                    let _ = crate::wayground::join::click_text_button(
-                        &mut browser,
-                        &["start", "lanjut"],
-                    );
+                    let _ = crate::wayground::join::click_start(&mut browser);
                 }
             }
             std::thread::sleep(Duration::from_millis(600));
@@ -1259,7 +1253,7 @@ fn wait_start(
                     &["resume attempt", "resume", "start", "lanjut"],
                 );
             } else {
-                let _ = crate::wayground::join::click_text_button(browser, &["start", "lanjut"]);
+                let _ = crate::wayground::join::click_start(browser);
             }
         }
         if state.has_question() || state.finished {

@@ -201,7 +201,7 @@ pub fn join(
             let _ = click_text_button(browser, &["start over", "mulai ulang"]);
             std::thread::sleep(Duration::from_millis(700));
             ensure_name(browser, name, tx);
-            let _ = click_text_button(browser, &["start", "lanjut", "resume attempt", "resume"]);
+            let _ = click_start(browser);
         }
         let mut tried_url = false;
         let mut entered = false;
@@ -232,9 +232,9 @@ pub fn join(
                     let _ = click_text_button(browser, &["start over", "mulai ulang"]);
                     std::thread::sleep(Duration::from_millis(700));
                     ensure_name(browser, name, tx);
-                    let _ = click_text_button(browser, &["start", "lanjut"]);
+                    let _ = click_start(browser);
                 } else {
-                    let _ = click_text_button(browser, &["start", "lanjut"]);
+                    let _ = click_start(browser);
                 }
             }
         }
@@ -409,6 +409,27 @@ fn game_url_from(browser: &mut Browser) -> Option<String> {
     Some(format!(
         "https://wayground.com/join/game/{blob}?gameType=live"
     ))
+}
+
+const START_LABELS: &[&str] = &[
+    "start",
+    "re-attempt",
+    "reattempt",
+    "re attempt",
+    "coba lagi",
+    "lanjut",
+    "resume attempt",
+    "resume",
+];
+
+/// Press the start/re-attempt control, preferring the known data-cy button.
+pub fn click_start(browser: &mut Browser) -> bool {
+    if dom::exists(&mut browser.mn, selectors::START_BUTTON)
+        && input::click_selector(&mut browser.mn, selectors::START_BUTTON).is_ok()
+    {
+        return true;
+    }
+    click_text_button(browser, START_LABELS).is_ok()
 }
 
 pub fn click_text_button(browser: &mut Browser, labels: &[&str]) -> Result<(), String> {
