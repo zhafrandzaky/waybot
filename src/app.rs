@@ -424,6 +424,18 @@ fn run(
             std::thread::sleep(Duration::from_millis(400));
             continue;
         };
+        if state.url.contains("/pre-game/") {
+            if last_nudge.elapsed() > Duration::from_secs(4) {
+                last_nudge = Instant::now();
+                events::file_log("pregame", "klik Resume/Start dari fase menjawab");
+                let _ = crate::wayground::join::click_text_button(
+                    &mut browser,
+                    &["resume attempt", "resume", "start", "lanjut"],
+                );
+            }
+            std::thread::sleep(Duration::from_millis(600));
+            continue;
+        }
         if !state.url.contains("/join/game/") {
             std::thread::sleep(Duration::from_millis(500));
             continue;
@@ -1209,6 +1221,12 @@ fn wait_start(
         };
         browser.tick_focus(&mut rt.metrics, false);
         let _ = tx.send(Event::Metrics(rt.metrics.summary()));
+        if state.url.contains("/pre-game/") {
+            let _ = crate::wayground::join::click_text_button(
+                browser,
+                &["resume attempt", "resume", "start", "lanjut"],
+            );
+        }
         if state.has_question() || state.finished {
             events::log(tx, Level::Info, "quiz dimulai");
             return Ok(true);

@@ -386,7 +386,7 @@ fn game_url_from(browser: &mut Browser) -> Option<String> {
     ))
 }
 
-fn click_text_button(browser: &mut Browser, labels: &[&str]) -> Result<(), String> {
+pub fn click_text_button(browser: &mut Browser, labels: &[&str]) -> Result<(), String> {
     let script = r#"
 const labels = arguments[0];
 const visible = (e) => { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 4 && r.height > 4 && st.visibility !== 'hidden' && st.display !== 'none'; };
