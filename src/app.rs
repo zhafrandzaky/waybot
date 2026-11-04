@@ -793,6 +793,7 @@ fn run(
 
     events::phase(&tx, Phase::Finishing);
     browser.keep_open();
+    let answered = answered.max(max_seen);
     rt.store.save_answers(&answers).map_err(|e| e.to_string())?;
     rt.store
         .write_json(
