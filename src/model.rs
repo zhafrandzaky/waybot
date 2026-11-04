@@ -274,14 +274,95 @@ pub struct DomButton {
 }
 
 impl PageState {
+    /// Stable identity even when the container lacks `data-quesid`.
+    /// Order matters: container id, question number, option fingerprint, text, body.
+    pub fn effective_id(&self) -> Option<String> {
+        if let Some(id) = &self.question_id {
+            return Some(id.clone());
+        }
+        if let Some(number) = self.question_number {
+            return Some(format!("n{number}"));
+        }
+        if !self.options.is_empty() {
+            let mut texts: Vec<String> = self.options.iter().map(|o| o.text.clone()).collect();
+            texts.sort();
+            return Some(format!(
+                "o{}",
+                &crate::util::hash_question("", &texts)[..12]
+            ));
+        }
+        let text = crate::util::norm_key(&self.question_text);
+        if !text.is_empty() {
+            return Some(format!(
+                "t{}",
+                &crate::util::hash_question(&text, &[])[..12]
+            ));
+        }
+        let body = crate::util::norm_key(&self.body_excerpt);
+        if body.is_empty() {
+            None
+        } else {
+            Some(format!(
+                "b{}",
+                &crate::util::hash_question(&body, &[])[..12]
+            ))
+        }
+    }
+
     pub fn has_question(&self) -> bool {
         self.effective_id().is_some() && (!self.options.is_empty() || !self.inputs.is_empty())
     }
+}
 
-    /// Stable id even when the container lacks `data-quesid`.
-    pub fn effective_id(&self) -> Option<String> {
-        self.question_id
-            .clone()
-            .or_else(|| self.question_number.map(|n| format!("n{n}")))
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn effective_id_prefers_container_id() {
+        let state = PageState {
+            question_id: Some("abc".into()),
+            question_number: Some(3),
+            question_text: "x".into(),
+            ..Default::default()
+        };
+        assert_eq!(state.effective_id().as_deref(), Some("abc"));
+    }
+
+    #[test]
+    fn effective_id_uses_number_then_options() {
+        let numbered = PageState {
+            question_number: Some(7),
+            ..Default::default()
+        };
+        assert_eq!(numbered.effective_id().as_deref(), Some("n7"));
+
+        let options = PageState {
+            options: vec![DomOption {
+                index: 0,
+                text: "A".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        assert!(options.effective_id().unwrap().starts_with('o'));
+    }
+
+    #[test]
+    fn effective_id_falls_back_to_text() {
+        let state = PageState {
+            question_text: "Apa itu CPU?".into(),
+            ..Default::default()
+        };
+        assert!(state.effective_id().unwrap().starts_with('t'));
+    }
+
+    #[test]
+    fn effective_id_last_resort_body() {
+        let state = PageState {
+            body_excerpt: "1 / 10 Question text: x".into(),
+            ..Default::default()
+        };
+        assert!(state.effective_id().unwrap().starts_with('b'));
     }
 }

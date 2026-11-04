@@ -78,19 +78,22 @@ pub fn join_identifiers(
         }
         if (url.contains("/v5/join") || url.contains("/v5/rejoin"))
             && player.is_none()
-                && let Ok(value) = serde_json::from_str::<Value>(body) {
-                    player = value
-                        .pointer("/player/id")
-                        .and_then(|v| v.as_str())
-                        .map(str::to_string);
-                }
+            && let Ok(value) = serde_json::from_str::<Value>(body)
+        {
+            player = value
+                .pointer("/player/id")
+                .and_then(|v| v.as_str())
+                .map(str::to_string);
+        }
         if quiz.is_none() {
             for text in [res, body] {
                 if let Some(found) = find_field(text, "quizId")
-                    && found.len() == 24 && found.chars().all(|c| c.is_ascii_hexdigit()) {
-                        quiz = Some(found);
-                        break;
-                    }
+                    && found.len() == 24
+                    && found.chars().all(|c| c.is_ascii_hexdigit())
+                {
+                    quiz = Some(found);
+                    break;
+                }
             }
         }
     }
@@ -123,10 +126,11 @@ pub fn harvest(
     );
 
     if quiz_id.is_none()
-        && let Some(found) = decrypt_quiz_id(browser) {
-            log(tx, Level::Info, format!("quizId dari URL: {found}"));
-            quiz_id = Some(found);
-        }
+        && let Some(found) = decrypt_quiz_id(browser)
+    {
+        log(tx, Level::Info, format!("quizId dari URL: {found}"));
+        quiz_id = Some(found);
+    }
     if quiz_id.is_none() {
         for path in [
             format!("{}/_gameapi/main/public/v1/games/{hash}/quiz", urls::ORIGIN),

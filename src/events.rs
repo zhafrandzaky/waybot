@@ -99,9 +99,10 @@ pub fn file_log(kind: &str, message: &str) {
     use std::io::Write;
     if let Some(cell) = LOG_FILE.get()
         && let Ok(mut slot) = cell.lock()
-            && let Some(file) = slot.as_mut() {
-                let _ = writeln!(file, "{} {kind} {message}", crate::store::now_ms());
-            }
+        && let Some(file) = slot.as_mut()
+    {
+        let _ = writeln!(file, "{} {kind} {message}", crate::store::now_ms());
+    }
 }
 
 pub fn log(tx: &Tx, level: Level, message: impl Into<String>) {

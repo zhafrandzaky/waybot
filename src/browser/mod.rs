@@ -30,7 +30,12 @@ impl Browser {
         fullscreen: bool,
     ) -> Result<Self, String> {
         let profile = firefox::profile_dir(profile, data_root).map_err(|e| e.to_string())?;
+
         let ff = firefox::launch(&profile, data_root, 1280, 860).map_err(|e| e.to_string())?;
+        let _ = std::fs::write(
+            data_root.join("browser.json"),
+            serde_json::json!({"pid": ff.pid(), "port": ff.port, "profile": profile}).to_string(),
+        );
         let deadline = std::time::Instant::now() + Duration::from_secs(30);
         let mut mn = loop {
             match Marionette::connect(ff.port, Duration::from_secs(60)) {
@@ -43,53 +48,8 @@ impl Browser {
                 }
             }
         };
-        mn.new_session()
-            .map_err(|e| format!("sesi Marionette: {e}"))?;
-        crate::events::file_log("step", "new_session ok");
-        let _ = mn.command(
-            "WebDriver:SetTimeouts",
-            serde_json::json!({"pageLoad": 30_000, "script": 30_000, "implicit": 5_000}),
-        );
-
-        // Temporary preload extension sets navigator.webdriver=false.
-        match extension::build(data_root) {
-            Ok(xpi) => match mn.install_addon(&xpi.to_string_lossy()) {
-                Ok(value) => crate::events::file_log("extension", &format!("terpasang {value}")),
-                Err(e) => crate::events::file_log("extension", &format!("GAGAL: {e}")),
-            },
-            Err(e) => crate::events::file_log("extension", &format!("build gagal: {e}")),
-        }
-
-        // Reuse the window Firefox already opened: one tab per session, no extra.
-        let handle = mn
-            .command("WebDriver:GetWindowHandles", serde_json::json!({}))
-            .ok()
-            .and_then(|value| {
-                let list = value
-                    .get("value")
-                    .and_then(|v| v.as_array())
-                    .cloned()
-                    .or_else(|| value.as_array().cloned())?;
-                list.first().and_then(|v| v.as_str()).map(str::to_string)
-            });
-        let handle = match handle {
-            Some(handle) => handle,
-            None => mn.new_tab().map_err(|e| format!("tab baru: {e}"))?,
-        };
-        mn.switch_window(&handle).map_err(|e| e.to_string())?;
-        crate::events::file_log("step", &format!("tab {handle}"));
-
-        // One window only: about:blank and the driver session each open one.
-        let mut browser = Self {
-            mn,
-            ff,
-            handle,
-            data_root: data_root.to_path_buf(),
-            blur: BlurWatch::new(),
-        };
-        browser.collapse_windows();
-        let _ = fullscreen;
-        Ok(browser)
+        crate::events::file_log("step", &format!("session={:?}", mn.new_session()));
+        finish(mn, ff, data_root, fullscreen)
     }
 
     fn current_handle(&mut self) -> String {
@@ -255,6 +215,11 @@ return !!win.fullscreen;
         Ok(())
     }
 
+    /// Keep Firefox open when the session finishes.
+    pub fn keep_open(&mut self) {
+        self.ff.detach();
+    }
+
     pub fn current_url(&mut self) -> String {
         self.mn
             .script(
@@ -385,4 +350,73 @@ const done = arguments[arguments.length - 1];
         }
         serde_json::from_str(text).ok()
     }
+}
+
+fn finish(
+    mut mn: Marionette,
+    ff: Firefox,
+    data_root: &Path,
+    fullscreen: bool,
+) -> Result<Browser, String> {
+    crate::events::file_log("step", "finish start");
+    let _ = mn.command(
+        "WebDriver:SetTimeouts",
+        serde_json::json!({"pageLoad": 30_000, "script": 30_000, "implicit": 5_000}),
+    );
+    match extension::build(data_root) {
+        Ok(xpi) => match mn.install_addon(&xpi.to_string_lossy()) {
+            Ok(value) => crate::events::file_log("extension", &format!("terpasang {value}")),
+            Err(e) => crate::events::file_log("extension", &format!("GAGAL: {e}")),
+        },
+        Err(e) => crate::events::file_log("extension", &format!("build gagal: {e}")),
+    }
+
+    crate::events::file_log("step", "handles start");
+    // The session window can appear a moment after NewSession.
+    let mut handle: Option<String> = None;
+    for _ in 0..24 {
+        if let Ok(value) = mn.command("WebDriver:GetWindowHandles", serde_json::json!({})) {
+            let list = value
+                .get("value")
+                .and_then(|v| v.as_array())
+                .cloned()
+                .or_else(|| value.as_array().cloned())
+                .unwrap_or_default();
+            if let Some(first) = list.first().and_then(|v| v.as_str()) {
+                handle = Some(first.to_string());
+                break;
+            }
+        }
+        if let Ok(value) = mn.command("WebDriver:GetWindowHandle", serde_json::json!({}))
+            && let Some(current) = value
+                .get("value")
+                .and_then(|v| v.as_str())
+                .or_else(|| value.as_str())
+        {
+            handle = Some(current.to_string());
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    crate::events::file_log("step", &format!("handle={handle:?}"));
+    let handle = match handle {
+        Some(handle) => handle,
+        None => mn.new_tab().map_err(|e| format!("tab baru: {e}"))?,
+    };
+    mn.switch_window(&handle).map_err(|e| e.to_string())?;
+
+    let mut browser = Browser {
+        mn,
+        ff,
+        handle,
+        data_root: data_root.to_path_buf(),
+        blur: BlurWatch::new(),
+    };
+    browser.collapse_windows();
+    let closed = browser.ff.close_other_processes();
+    if closed > 0 {
+        crate::events::file_log("windows", &format!("tutup {closed} jendela proses lain"));
+    }
+    let _ = fullscreen;
+    Ok(browser)
 }

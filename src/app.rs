@@ -91,21 +91,20 @@ fn run(
 
     events::phase(&tx, Phase::Joining);
     let resumed = try_resume(&mut browser, &config, &data_root, &tx, &mut rt.metrics);
-    if !resumed
-        && let Err(e) = join::join(&mut browser, &config.room, &config.name, &tx) {
-            browser.screenshot("join-fail", &rt.store);
-            let _ = browser
-                .mn
-                .script(
-                    "return document.body ? document.body.innerText.slice(0, 2000) : '';",
-                    json!([]),
-                )
-                .map(|v| {
-                    rt.store
-                        .write_text("join-fail.txt", v.as_str().unwrap_or_default())
-                });
-            return Err(e.to_string());
-        }
+    if !resumed && let Err(e) = join::join(&mut browser, &config.room, &config.name, &tx) {
+        browser.screenshot("join-fail", &rt.store);
+        let _ = browser
+            .mn
+            .script(
+                "return document.body ? document.body.innerText.slice(0, 2000) : '';",
+                json!([]),
+            )
+            .map(|v| {
+                rt.store
+                    .write_text("join-fail.txt", v.as_str().unwrap_or_default())
+            });
+        return Err(e.to_string());
+    }
     let _ = tx.send(Event::Joined);
     remember_session(&data_root, &config, &browser.current_url());
 
@@ -209,6 +208,7 @@ fn run(
     let _ = tx.send(Event::Ready);
     let started = wait_start(&mut browser, &mut rt, &tx, &harvested.questions)?;
     if !started {
+        browser.keep_open();
         let _ = tx.send(Event::Finished(summary(&rt, 0, 0)));
         return Ok(());
     }
@@ -220,10 +220,11 @@ fn run(
         let mut replaced = 0u32;
         for question in &harvested.questions {
             if let Some(values) = key_map.get(&question.id)
-                && let Some(slot) = answers.iter_mut().find(|a| a.question_id == question.id) {
-                    *slot = Answer::new(&question.id, values.clone(), AnswerSource::Key);
-                    replaced += 1;
-                }
+                && let Some(slot) = answers.iter_mut().find(|a| a.question_id == question.id)
+            {
+                *slot = Answer::new(&question.id, values.clone(), AnswerSource::Key);
+                replaced += 1;
+            }
         }
         if replaced > 0 {
             let _ = rt.store.save_answers(&answers);
@@ -251,6 +252,7 @@ fn run(
     let mut same_since = Instant::now();
     let mut last_nudge = Instant::now() - Duration::from_secs(10);
     let mut last_answer_at = Instant::now();
+    let mut end_seen: Option<Instant> = None;
 
     let overall = Instant::now() + Duration::from_millis(config.duration_ms);
     loop {
@@ -311,7 +313,13 @@ fn run(
             );
         }
 
-        if state.finished && !state.has_question() {
+        if state.finished
+            && !state.waiting_for_host
+            && !state.has_question()
+            && state.options.is_empty()
+            && state.inputs.is_empty()
+            && last_answer_at.elapsed() > Duration::from_secs(5)
+        {
             events::log(&tx, Level::Info, "quiz selesai di browser");
             break;
         }
@@ -320,12 +328,11 @@ fn run(
             std::thread::sleep(Duration::from_millis(350));
             continue;
         }
-        if state.login_popup
-            && dom::dismiss_login(&mut browser.mn) {
-                events::file_log("login", "popup login ditutup");
-                std::thread::sleep(Duration::from_millis(400));
-                continue;
-            }
+        if state.login_popup && dom::dismiss_login(&mut browser.mn) {
+            events::file_log("login", "popup login ditutup");
+            std::thread::sleep(Duration::from_millis(400));
+            continue;
+        }
         if state.fullscreen_prompt && rt.fullscreen {
             let _ = focus::focus_button(&mut browser.mn);
         }
@@ -339,7 +346,15 @@ fn run(
             continue;
         }
 
-        let Some(qid) = state.effective_id() else {
+        let mut resolved_id = state.effective_id();
+        // Body-hash ids are unstable during transitions; reuse the recent question id.
+        if let (Some(id), Some(current)) = (resolved_id.clone(), current_id.clone())
+            && id.starts_with('b')
+            && same_since.elapsed() < Duration::from_secs(6)
+        {
+            resolved_id = Some(current);
+        }
+        let Some(qid) = resolved_id else {
             if last_answer_at.elapsed() > Duration::from_secs(15) && state.finished {
                 events::log(
                     &tx,
@@ -370,9 +385,27 @@ fn run(
                         None,
                         &mut idle_done,
                     );
+                    last_agent = Instant::now();
+                    let empty = state.options.is_empty() && state.inputs.is_empty();
+                    if state.finished
+                        && empty
+                        && !state.waiting_for_host
+                        && state.dialog_text.is_empty()
+                    {
+                        let since = *end_seen.get_or_insert_with(Instant::now);
+                        if since.elapsed() > Duration::from_secs(4) {
+                            events::log(&tx, Level::Info, "halaman akhir stabil; sesi selesai");
+                            break;
+                        }
+                    } else {
+                        end_seen = None;
+                    }
                     if idle_done {
-                        events::log(&tx, Level::Info, "agen menandai akhir sesi");
-                        break;
+                        events::log(
+                            &tx,
+                            Level::Info,
+                            "agen selesai di layar ini; lanjut memantau",
+                        );
                     }
                 }
             } else if last_html.elapsed() > Duration::from_secs(3) {
@@ -391,6 +424,10 @@ fn run(
             std::thread::sleep(Duration::from_millis(400));
             continue;
         };
+        if state.options.is_empty() && state.inputs.is_empty() {
+            std::thread::sleep(Duration::from_millis(400));
+            continue;
+        }
         if current_id.as_deref() == Some(qid.as_str()) || visited.contains(&qid) {
             // Watchdog: the same screen for too long is a stall, not progress.
             if same_since.elapsed() > Duration::from_secs(20)
@@ -409,22 +446,23 @@ fn run(
                     visited.remove(&qid);
                     current_id = None;
                 } else if rt.agent
-                    && let Some(solver) = &solver {
-                        let mut nudge_done = false;
-                        run_agent(
-                            &mut browser,
-                            solver,
-                            &runtime,
-                            None,
-                            None,
-                            &tx,
-                            &rt.store,
-                            &mut rt.metrics,
-                            Some(&qid),
-                            None,
-                            &mut nudge_done,
-                        );
-                    }
+                    && let Some(solver) = &solver
+                {
+                    let mut nudge_done = false;
+                    run_agent(
+                        &mut browser,
+                        solver,
+                        &runtime,
+                        None,
+                        None,
+                        &tx,
+                        &rt.store,
+                        &mut rt.metrics,
+                        Some(&qid),
+                        None,
+                        &mut nudge_done,
+                    );
+                }
             }
             std::thread::sleep(Duration::from_millis(300));
             continue;
@@ -560,9 +598,10 @@ fn run(
                 &mut agent_done,
             );
         }
+        // `done` from a per-question agent only means "this question is handled";
+        // the session ends only on a stable end page (checked at the loop top).
         if agent_done {
-            events::log(&tx, Level::Info, "agen menandai sesi selesai");
-            break;
+            events::log(&tx, Level::Info, "agen menandai soal selesai");
         }
         let looks_done = state.options.iter().any(|o| o.selected) || state.feedback_visible;
         if !agent_acted && !looks_done {
@@ -588,29 +627,32 @@ fn run(
 
         let action_ms = took.elapsed().as_millis() as u64;
         let mut acked = wait_ack(&mut browser, &qid, &mut rt.metrics);
-        if !acked && rt.agent && !agent_acted
-            && let Some(solver) = &solver {
-                events::log(
-                    &tx,
-                    Level::Warn,
-                    "deterministik gagal; serahkan ke agen halaman",
-                );
-                if run_agent(
-                    &mut browser,
-                    solver,
-                    &runtime,
-                    Some(&question),
-                    Some(&answer),
-                    &tx,
-                    &rt.store,
-                    &mut rt.metrics,
-                    Some(&qid),
-                    None,
-                    &mut agent_done,
-                ) {
-                    acked = wait_ack(&mut browser, &qid, &mut rt.metrics);
-                }
+        if !acked
+            && rt.agent
+            && !agent_acted
+            && let Some(solver) = &solver
+        {
+            events::log(
+                &tx,
+                Level::Warn,
+                "deterministik gagal; serahkan ke agen halaman",
+            );
+            if run_agent(
+                &mut browser,
+                solver,
+                &runtime,
+                Some(&question),
+                Some(&answer),
+                &tx,
+                &rt.store,
+                &mut rt.metrics,
+                Some(&qid),
+                None,
+                &mut agent_done,
+            ) {
+                acked = wait_ack(&mut browser, &qid, &mut rt.metrics);
             }
+        }
         pacer.record_answered(took.elapsed().as_millis() as u64);
         answered += 1;
         cursor += 1;
@@ -648,6 +690,7 @@ fn run(
     }
 
     events::phase(&tx, Phase::Finishing);
+    browser.keep_open();
     rt.store.save_answers(&answers).map_err(|e| e.to_string())?;
     rt.store
         .write_json(
@@ -798,34 +841,36 @@ fn run_agent(
 
         let mut action = action;
         if let Some(index) = action.index
-            && matches!(action.action, ActionKind::ClickOption) && !suggested.is_empty() {
-                if action.doubt.unwrap_or(false) && !suggested.contains(&index) {
-                    // Doubtful reading: the pre-joined answer wins for this question.
-                    let exists = snapshot
-                        .get("options")
-                        .and_then(|o| o.as_array())
-                        .map(|list| {
-                            list.iter().any(|o| {
-                                o.get("index").and_then(|i| i.as_u64()) == Some(suggested[0] as u64)
-                            })
+            && matches!(action.action, ActionKind::ClickOption)
+            && !suggested.is_empty()
+        {
+            if action.doubt.unwrap_or(false) && !suggested.contains(&index) {
+                // Doubtful reading: the pre-joined answer wins for this question.
+                let exists = snapshot
+                    .get("options")
+                    .and_then(|o| o.as_array())
+                    .map(|list| {
+                        list.iter().any(|o| {
+                            o.get("index").and_then(|i| i.as_u64()) == Some(suggested[0] as u64)
                         })
-                        .unwrap_or(false);
-                    if exists {
-                        events::file_log(
-                            "agent",
-                            &format!("ragu: {index} -> {} dari jawaban awal", suggested[0]),
-                        );
-                        action.index = Some(suggested[0]);
-                    }
-                } else if !suggested.contains(&index) {
+                    })
+                    .unwrap_or(false);
+                if exists {
                     events::file_log(
                         "agent",
-                        &format!(
-                            "menyimpang dari jawaban awal: pilih {index}, seharusnya {suggested:?}"
-                        ),
+                        &format!("ragu: {index} -> {} dari jawaban awal", suggested[0]),
                     );
+                    action.index = Some(suggested[0]);
                 }
+            } else if !suggested.contains(&index) {
+                events::file_log(
+                    "agent",
+                    &format!(
+                        "menyimpang dari jawaban awal: pilih {index}, seharusnya {suggested:?}"
+                    ),
+                );
             }
+        }
         let signature = format!(
             "{:?}:{:?}:{:?}:{:?}",
             action.action, action.index, action.selector, action.text
@@ -1051,7 +1096,7 @@ fn question_from_state(state: &PageState) -> Question {
         QuestionType::Mcq
     };
     let mut question = Question {
-        id: state.question_id.clone().unwrap_or_default(),
+        id: state.effective_id().unwrap_or_default(),
         type_: kind,
         text: state.question_text.clone(),
         explain: state.explanation.clone(),
@@ -1083,9 +1128,10 @@ fn wait_start(
             return Ok(false);
         }
         if let Some(deadline) = deadline
-            && Instant::now() > deadline {
-                return Ok(false);
-            }
+            && Instant::now() > deadline
+        {
+            return Ok(false);
+        }
         if last_beat.elapsed() > Duration::from_secs(30) {
             last_beat = Instant::now();
             events::log(tx, Level::Info, "masih menunggu host…");

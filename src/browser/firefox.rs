@@ -17,10 +17,12 @@ pub enum LaunchError {
 }
 
 pub struct Firefox {
-    child: Child,
+    child: Option<Child>,
+    pid: u32,
     pub port: u16,
     pub profile: PathBuf,
     _tmp_profile: bool,
+    detached: bool,
 }
 
 fn free_port() -> u16 {
@@ -72,34 +74,45 @@ user_pref("browser.window.height", {height});
     fs::write(profile.join("user.js"), prefs)
 }
 
-fn pid_alive(pid: u32) -> bool {
+pub fn pid_alive(pid: u32) -> bool {
     std::path::Path::new(&format!("/proc/{pid}")).exists()
 }
 
 /// Kill a leftover Firefox that still holds our profile.
 fn kill_stale(profile: &Path, data_root: &Path) {
-    let state = data_root.join("browser.json");
-    if let Ok(text) = fs::read_to_string(&state)
+    let mut pids: Vec<u32> = Vec::new();
+    if let Ok(text) = fs::read_to_string(data_root.join("browser.json"))
         && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
-            && let Some(pid) = value.get("pid").and_then(|p| p.as_u64())
-                && pid_alive(pid as u32) {
-                    let _ = Command::new("kill").arg(pid.to_string()).status();
-                    std::thread::sleep(Duration::from_millis(600));
-                }
+        && let Some(pid) = value.get("pid").and_then(|p| p.as_u64())
+        && pid_alive(pid as u32)
+    {
+        pids.push(pid as u32);
+    }
     let needle = profile.to_string_lossy().to_string();
     if let Ok(entries) = fs::read_dir("/proc") {
         for entry in entries.flatten() {
-            let name = entry.file_name().to_string_lossy().to_string();
-            let Ok(pid) = name.parse::<u32>() else {
+            let Ok(pid) = entry.file_name().to_string_lossy().parse::<u32>() else {
                 continue;
             };
             let Ok(cmdline) = fs::read(format!("/proc/{pid}/cmdline")) else {
                 continue;
             };
             let cmd = String::from_utf8_lossy(&cmdline);
-            if cmd.contains("firefox") && cmd.contains(&needle) {
-                let _ = Command::new("kill").arg(pid.to_string()).status();
+            if cmd.contains("firefox") && cmd.contains(&needle) && !pids.contains(&pid) {
+                pids.push(pid);
             }
+        }
+    }
+    if pids.is_empty() {
+        return;
+    }
+    for pid in &pids {
+        let _ = Command::new("kill").arg(pid.to_string()).status();
+    }
+    std::thread::sleep(Duration::from_millis(1200));
+    for pid in &pids {
+        if pid_alive(*pid) {
+            let _ = Command::new("kill").args(["-9", &pid.to_string()]).status();
         }
     }
     let _ = fs::remove_file(profile.join("lock"));
@@ -143,22 +156,37 @@ pub fn launch(
         data_root.join("browser.json"),
         serde_json::json!({"pid": child.id(), "port": port}).to_string(),
     );
+    let pid = child.id();
     Ok(Firefox {
-        child,
+        pid,
+        child: Some(child),
         port,
         profile: profile.to_path_buf(),
         _tmp_profile: false,
+        detached: false,
     })
 }
 
 #[allow(dead_code)]
 impl Firefox {
     pub fn pid(&self) -> u32 {
-        self.child.id()
+        self.pid
+    }
+
+    /// Adopt a browser that is already running (no new process/window).
+    pub fn adopt(pid: u32, port: u16, profile: PathBuf) -> Self {
+        Self {
+            child: None,
+            pid,
+            port,
+            profile,
+            _tmp_profile: false,
+            detached: true,
+        }
     }
 
     pub fn is_running(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(None))
+        pid_alive(self.pid)
     }
 
     pub fn window_snapshot(&self) -> String {
@@ -190,6 +218,46 @@ impl Firefox {
                 )
             })
             .unwrap_or_else(|| "?".into())
+    }
+
+    /// Close other waybot Firefox processes' windows (orphans from earlier runs).
+    pub fn close_other_processes(&self) -> usize {
+        let output = Command::new("niri")
+            .args(["msg", "--json", "windows"])
+            .output();
+        let Ok(output) = output else { return 0 };
+        let Ok(text) = String::from_utf8(output.stdout) else {
+            return 0;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+            return 0;
+        };
+        let Some(list) = value.as_array() else {
+            return 0;
+        };
+        let mut closed = 0;
+        for w in list {
+            if w.get("app_id").and_then(|a| a.as_str()) != Some("firefox") {
+                continue;
+            }
+            let Some(pid) = w.get("pid").and_then(|p| p.as_u64()) else {
+                continue;
+            };
+            if pid == self.pid() as u64 {
+                continue;
+            }
+            let Some(id) = w.get("id").and_then(|i| i.as_u64()) else {
+                continue;
+            };
+            let _ = Command::new("niri")
+                .args(["msg", "action", "close-window", "--id", &id.to_string()])
+                .status();
+            closed += 1;
+        }
+        if closed > 0 {
+            std::thread::sleep(Duration::from_millis(400));
+        }
+        closed
     }
 
     /// Close windows of our own process that are not the title we control.
@@ -309,9 +377,21 @@ impl Firefox {
     }
 }
 
+impl Firefox {
+    /// Leave the browser running after the session ends.
+    pub fn detach(&mut self) {
+        self.detached = true;
+    }
+}
+
 impl Drop for Firefox {
     fn drop(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+        if self.detached {
+            return;
+        }
+        if let Some(child) = self.child.as_mut() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
     }
 }

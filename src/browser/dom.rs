@@ -34,16 +34,29 @@ const media = qc ? [...qc.querySelectorAll('img')].map(i => ({ src: i.currentSrc
 const dialog = document.querySelector('[role=dialog], .dialog, .modal');
 const explanationNode = [...document.querySelectorAll('div,section')].find(e => /answer explanation/i.test(norm(e.innerText)) && norm(e.innerText).length < 1200);
 let qtext = qc ? norm((qc.querySelector('[data-cy=question-text], .question-text, .question-title, [class*=question-text]') || {}).innerText || '') : '';
-if (!qtext && qc) {
-  qtext = (qc.innerText || '').split('\n').map((l) => norm(l)).find((l) => l.length > 3 && !/^\d+\s*\/?\s*\d*$/.test(l) && !/^submit$/i.test(l)) || '';
+if (!qtext) {
+  const global = document.querySelector('[data-cy=question-text], [data-testid=question-text], .question-text');
+  if (global) qtext = norm(global.innerText);
 }
+if (!qtext && qc) {
+  qtext = (qc.innerText || '').split('\n').map((l) => norm(l)).find((l) => l.length > 3 && !/^\d+\s*\/?\s*\d*$/.test(l) && !/^submit$/i.test(l) && !/^question text:?$/i.test(l)) || '';
+}
+if (!qtext) {
+  const lines = (body || '').split('\n').map((l) => norm(l));
+  const idx = lines.findIndex((l) => /^question text:/i.test(l));
+  if (idx >= 0) {
+    const rest = lines[idx].replace(/^question text:\s*/i, '');
+    qtext = rest || lines[idx + 1] || '';
+  }
+}
+qtext = qtext.replace(/^question text:\s*/i, '');
 return {
   url: location.href,
   focused: document.hasFocus(),
   visible: document.visibilityState === 'visible',
   question_id: qc ? qc.getAttribute('data-quesid') : (document.querySelector('[data-quesid]') ? document.querySelector('[data-quesid]').getAttribute('data-quesid') : null),
-  question_number: num('[data-testid=current-question-number]'),
-  total_questions: num('[data-testid=total-question-number]'),
+  question_number: num('[data-testid=current-question-number]') || (function () { const m = (document.body ? document.body.innerText : '').match(/(\d+)\s*\/\s*(\d+)/); return m ? parseInt(m[1], 10) : null; })(),
+  total_questions: num('[data-testid=total-question-number]') || (function () { const m = (document.body ? document.body.innerText : '').match(/(\d+)\s*\/\s*(\d+)/); return m ? parseInt(m[2], 10) : null; })(),
   question_text: qtext,
   question_type_hint: qc ? (qc.className || '') : null,
   options: opts,
@@ -54,7 +67,7 @@ return {
   feedback_visible: /answer explanation|correct answer|jawaban benar/i.test(body),
   explanation: explanationNode ? norm(explanationNode.innerText).slice(0, 1200) : '',
   waiting_for_host: /waiting for the host|menunggu host/i.test(body),
-  finished: /game over|you finished|see results|leaderboard|skip to summary|survey|summary|ringkasan|akurasi|accuracy/i.test(body),
+  finished: /game over|you finished|see results|leave game|back to home|skip to summary|quiz summary|ringkasan hasil|leaderboard|remarkable|great job|well done|accuracy|you scored/i.test(body),
   interstitial: /next up|who's up next|selanjutnya/i.test(body) ? 'interstitial' : null,
   dialog_text: dialog ? norm(dialog.innerText).slice(0, 500) : '',
   error_text: /room not found|incomplete game already exists|expired/i.test(body) ? norm(body).slice(0, 400) : '',
