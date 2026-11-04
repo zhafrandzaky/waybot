@@ -249,6 +249,7 @@ fn run(
     let mut cursor = 0usize;
     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut attempts: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
+    let mut pregame_started_over = false;
     let mut answered_fingerprints: std::collections::HashSet<String> =
         std::collections::HashSet::new();
     let mut last_dbg = Instant::now();
@@ -431,13 +432,31 @@ fn run(
         if state.url.contains("/pre-game/") {
             if last_nudge.elapsed() > Duration::from_secs(4) {
                 last_nudge = Instant::now();
-                let labels: &[&str] = if config.resume {
-                    &["resume attempt", "resume", "start", "lanjut"]
+                if config.resume {
+                    let _ = crate::wayground::join::click_text_button(
+                        &mut browser,
+                        &["resume attempt", "resume", "start", "lanjut"],
+                    );
+                } else if !pregame_started_over {
+                    pregame_started_over = true;
+                    events::file_log("pregame", "start over sekali");
+                    let _ = crate::wayground::join::click_text_button(
+                        &mut browser,
+                        &["start over", "mulai ulang"],
+                    );
+                    std::thread::sleep(Duration::from_millis(800));
+                    crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
+                    let _ = crate::wayground::join::click_text_button(
+                        &mut browser,
+                        &["start", "lanjut"],
+                    );
                 } else {
-                    &["start over", "mulai ulang", "start", "lanjut"]
-                };
-                events::file_log("pregame", &format!("klik {labels:?} dari fase menjawab"));
-                let _ = crate::wayground::join::click_text_button(&mut browser, labels);
+                    crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
+                    let _ = crate::wayground::join::click_text_button(
+                        &mut browser,
+                        &["start", "lanjut"],
+                    );
+                }
             }
             std::thread::sleep(Duration::from_millis(600));
             continue;
@@ -446,6 +465,7 @@ fn run(
             std::thread::sleep(Duration::from_millis(500));
             continue;
         }
+        pregame_started_over = false;
         if state.options.is_empty() && state.inputs.is_empty() {
             std::thread::sleep(Duration::from_millis(400));
             continue;
@@ -1228,12 +1248,14 @@ fn wait_start(
         browser.tick_focus(&mut rt.metrics, false);
         let _ = tx.send(Event::Metrics(rt.metrics.summary()));
         if state.url.contains("/pre-game/") {
-            let labels: &[&str] = if rt.resume {
-                &["resume attempt", "resume", "start", "lanjut"]
+            if rt.resume {
+                let _ = crate::wayground::join::click_text_button(
+                    browser,
+                    &["resume attempt", "resume", "start", "lanjut"],
+                );
             } else {
-                &["start over", "mulai ulang", "start", "lanjut"]
-            };
-            let _ = crate::wayground::join::click_text_button(browser, labels);
+                let _ = crate::wayground::join::click_text_button(browser, &["start", "lanjut"]);
+            }
         }
         if state.has_question() || state.finished {
             events::log(tx, Level::Info, "quiz dimulai");

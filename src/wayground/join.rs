@@ -205,6 +205,7 @@ pub fn join(
         }
         let mut tried_url = false;
         let mut entered = false;
+        let mut over_done = resume;
         for step in 0..15 {
             std::thread::sleep(Duration::from_millis(1000));
             let Ok(state) = dom::snapshot(&mut browser.mn) else {
@@ -226,10 +227,13 @@ pub fn join(
             } else if state.url.contains("/pre-game/") {
                 if resume {
                     let _ = click_text_button(browser, &["resume attempt", "resume", "start"]);
-                } else {
+                } else if !over_done {
+                    over_done = true;
                     let _ = click_text_button(browser, &["start over", "mulai ulang"]);
-                    std::thread::sleep(Duration::from_millis(500));
+                    std::thread::sleep(Duration::from_millis(700));
                     ensure_name(browser, name, tx);
+                    let _ = click_text_button(browser, &["start", "lanjut"]);
+                } else {
                     let _ = click_text_button(browser, &["start", "lanjut"]);
                 }
             }
@@ -352,7 +356,7 @@ return 'input[type=text]';
 }
 
 /// Force the typed name onto the pre-game screen, even when the browser remembers one.
-fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
+pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
     for attempt in 0..3 {
         if let Some(css) = name_field(browser) {
             if input::type_selector(&mut browser.mn, &css, name).is_ok() {
