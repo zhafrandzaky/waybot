@@ -94,4 +94,4 @@ cargo clippy --all-targets -- -D warnings
 
 ## Lisensi
 
-Belum ditentukan.
+MIT, © 2026 Ziona Zyy. Lihat `LICENSE`.
