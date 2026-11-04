@@ -641,8 +641,8 @@ fn run(
         }
 
         let _ = tx.send(Event::Progress(Progress {
-            index: (cursor + 1) as u32,
-            total,
+            index: state.question_number.unwrap_or((cursor + 1) as u32),
+            total: state.total_questions.unwrap_or(total),
             question: crate::util::truncate_chars(&question.plain_text(), 90),
             answer: answer.values.join(" | "),
             source: answer.source.label().to_string(),
