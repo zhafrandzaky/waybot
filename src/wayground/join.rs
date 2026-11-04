@@ -24,7 +24,13 @@ pub enum JoinError {
     LoginRequired,
 }
 
-pub fn join(browser: &mut Browser, code: &str, name: &str, tx: &Tx) -> Result<(), JoinError> {
+pub fn join(
+    browser: &mut Browser,
+    code: &str,
+    name: &str,
+    resume: bool,
+    tx: &Tx,
+) -> Result<(), JoinError> {
     log(tx, Level::Info, "membuka wayground.com/join");
     browser
         .navigate(urls::JOIN)
@@ -187,8 +193,16 @@ pub fn join(browser: &mut Browser, code: &str, name: &str, tx: &Tx) -> Result<()
             Level::Info,
             "nama sudah diingat browser; mencoba Resume attempt",
         );
-        ensure_name(browser, name, tx);
-        let _ = click_text_button(browser, &["resume attempt", "resume", "start", "lanjut"]);
+        if resume {
+            ensure_name(browser, name, tx);
+            let _ = click_text_button(browser, &["resume attempt", "resume", "start", "lanjut"]);
+        } else {
+            // Fresh run: discard the stale attempt, then join with the typed name.
+            let _ = click_text_button(browser, &["start over", "mulai ulang"]);
+            std::thread::sleep(Duration::from_millis(700));
+            ensure_name(browser, name, tx);
+            let _ = click_text_button(browser, &["start", "lanjut", "resume attempt", "resume"]);
+        }
         let mut tried_url = false;
         let mut entered = false;
         for step in 0..15 {
@@ -210,7 +224,14 @@ pub fn join(browser: &mut Browser, code: &str, name: &str, tx: &Tx) -> Result<()
                     let _ = browser.navigate(&url);
                 }
             } else if state.url.contains("/pre-game/") {
-                let _ = click_text_button(browser, &["resume attempt", "resume", "start"]);
+                if resume {
+                    let _ = click_text_button(browser, &["resume attempt", "resume", "start"]);
+                } else {
+                    let _ = click_text_button(browser, &["start over", "mulai ulang"]);
+                    std::thread::sleep(Duration::from_millis(500));
+                    ensure_name(browser, name, tx);
+                    let _ = click_text_button(browser, &["start", "lanjut"]);
+                }
             }
         }
         if entered {

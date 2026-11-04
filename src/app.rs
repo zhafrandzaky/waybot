@@ -25,6 +25,7 @@ pub struct Runtime {
     pub fullscreen: bool,
     pub wait_max_min: u64,
     pub agent: bool,
+    pub resume: bool,
 }
 
 pub fn spawn(config: SessionConfig, app: crate::config::AppConfig, abort: Arc<AtomicBool>, tx: Tx) {
@@ -53,6 +54,7 @@ fn run(
         fullscreen: config.fullscreen,
         wait_max_min: app.wait_max_min,
         agent: config.agent,
+        resume: config.resume,
     };
     events::set_log_file(&rt.store.dir().join("app.log"));
     events::file_log("run", "mulai");
@@ -91,7 +93,9 @@ fn run(
 
     events::phase(&tx, Phase::Joining);
     let resumed = try_resume(&mut browser, &config, &data_root, &tx, &mut rt.metrics);
-    if !resumed && let Err(e) = join::join(&mut browser, &config.room, &config.name, &tx) {
+    if !resumed
+        && let Err(e) = join::join(&mut browser, &config.room, &config.name, config.resume, &tx)
+    {
         browser.screenshot("join-fail", &rt.store);
         let _ = browser
             .mn
@@ -427,11 +431,13 @@ fn run(
         if state.url.contains("/pre-game/") {
             if last_nudge.elapsed() > Duration::from_secs(4) {
                 last_nudge = Instant::now();
-                events::file_log("pregame", "klik Resume/Start dari fase menjawab");
-                let _ = crate::wayground::join::click_text_button(
-                    &mut browser,
-                    &["resume attempt", "resume", "start", "lanjut"],
-                );
+                let labels: &[&str] = if config.resume {
+                    &["resume attempt", "resume", "start", "lanjut"]
+                } else {
+                    &["start over", "mulai ulang", "start", "lanjut"]
+                };
+                events::file_log("pregame", &format!("klik {labels:?} dari fase menjawab"));
+                let _ = crate::wayground::join::click_text_button(&mut browser, labels);
             }
             std::thread::sleep(Duration::from_millis(600));
             continue;
@@ -1222,10 +1228,12 @@ fn wait_start(
         browser.tick_focus(&mut rt.metrics, false);
         let _ = tx.send(Event::Metrics(rt.metrics.summary()));
         if state.url.contains("/pre-game/") {
-            let _ = crate::wayground::join::click_text_button(
-                browser,
-                &["resume attempt", "resume", "start", "lanjut"],
-            );
+            let labels: &[&str] = if rt.resume {
+                &["resume attempt", "resume", "start", "lanjut"]
+            } else {
+                &["start over", "mulai ulang", "start", "lanjut"]
+            };
+            let _ = crate::wayground::join::click_text_button(browser, labels);
         }
         if state.has_question() || state.finished {
             events::log(tx, Level::Info, "quiz dimulai");
