@@ -476,6 +476,7 @@ fn run(
             std::thread::sleep(Duration::from_millis(400));
             continue;
         }
+        let visit_key = format!("{}:{}", state.question_number.unwrap_or(0), qid);
         // Fingerprint guards against id churn during transitions.
         let mut fp_parts: Vec<String> = state
             .options
@@ -484,7 +485,8 @@ fn run(
             .collect();
         fp_parts.sort();
         let fingerprint = format!(
-            "{}|{}",
+            "{}|{}|{}",
+            state.question_number.unwrap_or(0),
             crate::util::norm_key(&state.question_text),
             fp_parts.join("||")
         );
@@ -492,7 +494,7 @@ fn run(
             std::thread::sleep(Duration::from_millis(300));
             continue;
         }
-        if current_id.as_deref() == Some(qid.as_str()) || visited.contains(&qid) {
+        if current_id.as_deref() == Some(visit_key.as_str()) || visited.contains(&visit_key) {
             // Watchdog: the same screen for too long is a stall, not progress.
             if same_since.elapsed() > Duration::from_secs(20)
                 && last_nudge.elapsed() > Duration::from_secs(5)
@@ -532,12 +534,12 @@ fn run(
             continue;
         }
 
-        if last_qid.as_deref() != Some(qid.as_str()) {
-            last_qid = Some(qid.clone());
+        if last_qid.as_deref() != Some(visit_key.as_str()) {
+            last_qid = Some(visit_key.clone());
             same_since = Instant::now();
         }
-        current_id = Some(qid.clone());
-        visited.insert(qid.clone());
+        current_id = Some(visit_key.clone());
+        visited.insert(visit_key.clone());
         // Harvest order is not guaranteed to equal the live quiz order: match text first.
         let shown = {
             let base = crate::util::norm_key(&state.question_text);
@@ -776,11 +778,11 @@ fn run(
             last_answer_at = Instant::now();
             advance(&mut browser, &qid, &mut rt.metrics, &rt.store, &rt.aborted);
         } else {
-            let tries = attempts.entry(qid.clone()).or_insert(0);
+            let tries = attempts.entry(visit_key.clone()).or_insert(0);
             *tries += 1;
             answered_fingerprints.remove(&fingerprint);
             if *tries < 3 {
-                visited.remove(&qid);
+                visited.remove(&visit_key);
                 current_id = None;
                 events::log(
                     &tx,
