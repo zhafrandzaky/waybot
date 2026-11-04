@@ -51,6 +51,8 @@ struct App {
     agent: bool,
     started_at: Option<std::time::Instant>,
     total_ms: u64,
+    live_number: u32,
+    live_total: u32,
     errors: Vec<String>,
     app_cfg: AppConfig,
     tx: Sender<Event>,
@@ -100,6 +102,8 @@ pub fn run(cli: Cli, app_cfg: AppConfig) -> std::io::Result<()> {
         agent: !cli.no_agent,
         started_at: None,
         total_ms: 180_000,
+        live_number: 0,
+        live_total: 0,
         errors: Vec::new(),
         app_cfg: app_cfg.clone(),
         tx,
@@ -244,12 +248,15 @@ impl App {
                     self.screen = Screen::Lobby;
                     self.phase = Phase::WaitingStart;
                 }
-                Event::Progress(progress) => {
+                Event::Started { number, total } => {
                     if self.started_at.is_none() {
                         self.started_at = Some(std::time::Instant::now());
                     }
-                    self.progress = Some(progress);
+                    self.live_number = number;
+                    self.live_total = total;
+                    self.screen = Screen::Quiz;
                 }
+                Event::Progress(progress) => self.progress = Some(progress),
                 Event::Metrics(line) => self.metrics = line,
                 Event::Finished(summary) => {
                     self.summary = Some(summary);
@@ -871,7 +878,14 @@ fn dashboard(frame: &mut Frame, area: Rect, app: &App, lobby: bool) {
                         fmt_duration(remaining)
                     )
                 })
-                .unwrap_or_else(|| format!("menunggu soal · sisa {}", fmt_duration(remaining)))
+                .unwrap_or_else(|| {
+                    format!(
+                        "soal {}/{} · menunggu jawaban · sisa {}",
+                        app.live_number,
+                        app.live_total.max(app.progress.as_ref().map(|p| p.total).unwrap_or(0)),
+                        fmt_duration(remaining)
+                    )
+                })
         });
     frame.render_widget(gauge, rows[0]);
 
@@ -1028,6 +1042,8 @@ mod tests {
             agent: true,
             started_at: None,
             total_ms: 180_000,
+            live_number: 0,
+            live_total: 0,
             errors: vec![],
             app_cfg,
             tx,

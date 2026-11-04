@@ -74,6 +74,10 @@ pub enum Event {
         low: u32,
     },
     Ready,
+    Started {
+        number: u32,
+        total: u32,
+    },
     Progress(Progress),
     Metrics(String),
     ModelCheck(Result<Vec<String>, String>),

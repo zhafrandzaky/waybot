@@ -250,6 +250,7 @@ fn run(
     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut attempts: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
     let mut pregame_started_over = false;
+    let mut started_emitted = false;
     let mut max_seen: u32 = 0;
     let mut answered_fingerprints: std::collections::HashSet<String> =
         std::collections::HashSet::new();
@@ -306,6 +307,13 @@ fn run(
         browser.tick_focus(&mut rt.metrics, false);
         if let Some(number) = state.question_number {
             max_seen = max_seen.max(number);
+        }
+        if !started_emitted && (state.question_number.is_some() || !state.options.is_empty()) {
+            started_emitted = true;
+            let _ = tx.send(Event::Started {
+                number: state.question_number.unwrap_or(0),
+                total: state.total_questions.unwrap_or(0),
+            });
         }
         if last_dbg.elapsed() > Duration::from_secs(3) {
             last_dbg = Instant::now();
