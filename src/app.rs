@@ -52,7 +52,7 @@ fn run(
         aborted,
         fullscreen: config.fullscreen,
         wait_max_min: app.wait_max_min,
-        agent: app.agent,
+        agent: config.agent,
     };
     events::set_log_file(&rt.store.dir().join("app.log"));
     events::file_log("run", "mulai");

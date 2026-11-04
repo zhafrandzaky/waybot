@@ -47,6 +47,10 @@ struct App {
     thinking: Thinking,
     vision: bool,
     fullscreen: bool,
+    resume: bool,
+    agent: bool,
+    started_at: Option<std::time::Instant>,
+    total_ms: u64,
     errors: Vec<String>,
     app_cfg: AppConfig,
     tx: Sender<Event>,
@@ -65,7 +69,7 @@ struct App {
     pending: Option<SessionConfig>,
 }
 
-const FIELDS: usize = 13;
+const FIELDS: usize = 15;
 
 pub fn run(cli: Cli, app_cfg: AppConfig) -> std::io::Result<()> {
     let (tx, rx) = std::sync::mpsc::channel();
@@ -92,6 +96,10 @@ pub fn run(cli: Cli, app_cfg: AppConfig) -> std::io::Result<()> {
         thinking: app_cfg.thinking,
         vision: app_cfg.vision,
         fullscreen: !cli.no_fullscreen,
+        resume: cli.resume,
+        agent: !cli.no_agent,
+        started_at: None,
+        total_ms: 180_000,
         errors: Vec::new(),
         app_cfg: app_cfg.clone(),
         tx,
@@ -217,6 +225,7 @@ impl App {
                     self.phase = phase;
                     if phase == Phase::Answering {
                         self.screen = Screen::Quiz;
+                        self.started_at = Some(std::time::Instant::now());
                     }
                     if phase == Phase::Done {
                         self.screen = Screen::Summary;
@@ -409,6 +418,8 @@ impl App {
         match self.focus {
             7 => self.vision = !self.vision,
             9 => self.fullscreen = !self.fullscreen,
+            13 => self.resume = !self.resume,
+            14 => self.agent = !self.agent,
             _ => {}
         }
     }
@@ -436,7 +447,8 @@ impl App {
             8 => &mut self.adv.ocr,
             10 => &mut self.adv.profile,
             11 => &mut self.adv.jeda_min,
-            _ => &mut self.adv.jeda_maks,
+            12 => &mut self.adv.jeda_maks,
+            _ => &mut self.adv.jeda_min,
         }
     }
 
@@ -488,6 +500,8 @@ impl App {
                 Some(self.adv.effort.trim().to_string())
             },
             vision: self.vision,
+            resume: self.resume,
+            agent: self.agent,
             ocr: OcrMode::parse(&self.adv.ocr),
             fullscreen: self.fullscreen,
             profile: if self.adv.profile.trim().is_empty() {
@@ -541,6 +555,7 @@ impl App {
         if self.app_cfg.api_key.is_empty() {
             // Still start: keys/explain/heuristics can carry the session.
         }
+        self.total_ms = cfg.duration_ms;
         self.phase = Phase::Launching;
         self.screen = Screen::Lobby;
         self.log(
@@ -713,6 +728,20 @@ fn setup(frame: &mut Frame, area: Rect, app: &App) {
             &app.adv.jeda_maks,
             "detik",
         ));
+        lines.push(field_line(
+            app,
+            13,
+            "Resume sesi",
+            if app.resume { "ya" } else { "tidak" },
+            "Spasi ubah",
+        ));
+        lines.push(field_line(
+            app,
+            14,
+            "Agen AI",
+            if app.agent { "aktif" } else { "nonaktif" },
+            "Spasi ubah",
+        ));
     } else {
         lines.push(Line::styled(
             " F3 untuk opsi lanjutan (model, thinking, vision, jeda, profil)",
@@ -797,7 +826,23 @@ fn confirm(frame: &mut Frame, area: Rect, app: &App) {
 fn dashboard(frame: &mut Frame, area: Rect, app: &App, lobby: bool) {
     let rows = Layout::vertical([Constraint::Length(5), Constraint::Min(4)]).split(area);
     let (total, keyed, explained, ai, low) = app.questions.unwrap_or((0, 0, 0, 0, 0));
-    let ratio = 0.0;
+    let remaining = app
+        .started_at
+        .map(|start| {
+            app.total_ms
+                .saturating_sub(start.elapsed().as_millis() as u64)
+        })
+        .unwrap_or_else(|| {
+            app.progress
+                .as_ref()
+                .map(|p| p.remaining_ms)
+                .unwrap_or(app.total_ms)
+        });
+    let ratio = if app.total_ms == 0 {
+        0.0
+    } else {
+        (1.0 - remaining as f64 / app.total_ms as f64).clamp(0.0, 1.0)
+    };
     let gauge = Gauge::default()
         .block(Block::default().borders(Borders::ALL).title(if lobby {
             " Menunggu host "
@@ -817,10 +862,10 @@ fn dashboard(frame: &mut Frame, area: Rect, app: &App, lobby: bool) {
                         p.index,
                         p.total,
                         p.source,
-                        fmt_duration(p.remaining_ms)
+                        fmt_duration(remaining)
                     )
                 })
-                .unwrap_or_else(|| "menunggu soal".into())
+                .unwrap_or_else(|| format!("menunggu soal · sisa {}", fmt_duration(remaining)))
         });
     frame.render_widget(gauge, rows[0]);
 
@@ -957,7 +1002,7 @@ mod tests {
             ocr: OcrMode::Auto,
             vision: false,
             resume: false,
-            agent: false,
+            agent: true,
             wait_max_min: 0,
             jeda_min_ms: 2500,
             jeda_maks_ms: 8000,
@@ -973,6 +1018,10 @@ mod tests {
             thinking: Thinking::Auto,
             vision: false,
             fullscreen: false,
+            resume: false,
+            agent: true,
+            started_at: None,
+            total_ms: 180_000,
             errors: vec![],
             app_cfg,
             tx,
