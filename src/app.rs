@@ -558,7 +558,7 @@ fn run(
             question.id = qid.clone();
         }
         // The host may pause between questions; guarantee headroom per question.
-        overall = overall.max(Instant::now() + Duration::from_secs(20));
+        overall = overall.max(Instant::now() + Duration::from_secs(30));
         let existing = answers
             .iter()
             .find(|a| a.question_id == question.id)
