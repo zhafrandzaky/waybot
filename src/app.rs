@@ -254,7 +254,7 @@ fn run(
     let mut last_answer_at = Instant::now();
     let mut end_seen: Option<Instant> = None;
 
-    let overall = Instant::now() + Duration::from_millis(config.duration_ms);
+    let mut overall = Instant::now() + Duration::from_millis(config.duration_ms);
     loop {
         if rt.aborted.load(Ordering::Relaxed) {
             events::log(&tx, Level::Warn, "dibatalkan pengguna");
@@ -316,8 +316,6 @@ fn run(
         if state.finished
             && !state.waiting_for_host
             && !state.has_question()
-            && state.options.is_empty()
-            && state.inputs.is_empty()
             && last_answer_at.elapsed() > Duration::from_secs(5)
         {
             events::log(&tx, Level::Info, "quiz selesai di browser");
@@ -499,16 +497,33 @@ fn run(
                     && (shown.contains(&key) || key.contains(&shown_short))
             })
             .cloned();
+        let shown_opts: std::collections::BTreeSet<String> = state
+            .options
+            .iter()
+            .map(|o| crate::util::norm_key(&o.text))
+            .collect();
+        let by_options = harvested
+            .questions
+            .iter()
+            .find(|q| {
+                !shown_opts.is_empty()
+                    && q.options.len() == state.options.len()
+                    && q.options
+                        .iter()
+                        .all(|o| shown_opts.contains(&crate::util::norm_key(&o.text)))
+            })
+            .cloned();
         let by_index = state
             .question_number
             .and_then(|n| harvested.questions.get(n.saturating_sub(1) as usize))
             .cloned();
-        let question = match harvested
+        let mut question = match harvested
             .questions
             .iter()
             .find(|q| q.id == qid)
             .cloned()
             .or(by_text)
+            .or(by_options)
             .or(by_index)
         {
             Some(q) => q,
@@ -521,6 +536,11 @@ fn run(
                 question_from_state(&state)
             }
         };
+        if question.id.is_empty() {
+            question.id = qid.clone();
+        }
+        // The host may pause between questions; guarantee headroom per question.
+        overall = overall.max(Instant::now() + Duration::from_secs(20));
         let existing = answers
             .iter()
             .find(|a| a.question_id == question.id)
