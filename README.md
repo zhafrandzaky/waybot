@@ -13,7 +13,7 @@ CLI terminal layar penuh (Rust) yang mengotomatisasi sesi kuis [Wayground](https
 - Aksi divalidasi, diverifikasi, dan diulang terbatas; jawaban tersimpan dipakai saat bacaan gambar meragukan.
 - Jeda berbasis anggaran waktu (target manusiawi, selesai sebelum durasi yang diinput).
 - Anti-deteksi: `navigator.webdriver === false`, input native tanpa paste, tanpa resize setelah join, focus keeper, metrik dicatat.
-- Resume otomatis bila proses terputus; sesi dapat dijalankan ulang.
+- Sesi baru setiap kali dijalankan; `Resume sesi` (toggle `F3` atau `--resume`) melanjutkan percobaan room yang sama, sedangkan default menekan **Start Over** dan mengisi ulang nama.
 
 ## Kebutuhan
 
@@ -49,7 +49,9 @@ DEEPSEEK_REASONING_EFFORT=low
 ./target/release/waybot
 ```
 
-Isi kode room, nama, dan durasi (`mm:ss`). `F3` membuka opsi lanjutan (model, thinking, vision, OCR, fullscreen, profil, jeda).
+Isi kode room, nama, dan durasi (`mm:ss`). `F3` membuka opsi lanjutan (model, thinking, vision, OCR, fullscreen, profil, jeda, `Resume sesi`, `Agen AI`).
+
+Keybinding: `Tab`/`Shift-Tab`/`↑↓` pindah field, `Space` ubah toggle, `←/→` ubah Thinking, `Enter` lanjut, `Esc` kosongkan field atau kembali, `Ctrl-C` batalkan sesi (dengan konfirmasi), `F1` bantuan, `F2` log, `R` ulangi dari Ringkasan.
 
 Untuk pengujian berulang, semua nilai dapat diberikan sebagai argumen:
 
@@ -57,7 +59,7 @@ Untuk pengujian berulang, semua nilai dapat diberikan sebagai argumen:
 ./target/release/waybot --room 123456 --name Budi --duration 03:00 --yes
 ```
 
-Alur: join → ambil soal → siapkan jawaban → tampilkan `SIAP — SILAKAN START QUIZ` → tunggu host → jawab otomatis → ringkasan dan file sesi.
+Alur: join → ambil soal → siapkan jawaban → tampilkan `SIAP — SILAKAN START QUIZ` → tunggu host → jawab otomatis → ringkasan dan file sesi. Hitungan waktu baru berjalan saat soal pertama terlihat.
 
 ## Struktur
 
@@ -88,6 +90,7 @@ cargo clippy --all-targets -- -D warnings
 - Tipe eksotis (DROPDOWN, REORDER, MATCH, HOTSPOT, DRAGNDROP) baru didukung secara best-effort.
 - Kunci jawaban resmi hanya tersedia bila `quizId` berhasil diambil; jika tidak, jawaban berasal dari `explain` atau model.
 - Akurasi jawaban bergantung pada model; confidence dan sumber selalu dicatat.
+- Jalur `Resume attempt` dan `Start Over` sudah diimplementasikan tetapi belum diuji live; lihat `docs/04-live-test-checklist.md`.
 
 ## Lisensi
 

@@ -76,7 +76,7 @@ Status: **SELESAI** untuk F1-F7. Hasil uji live tercatat di bawah.
 | T8 | API key invalid | Sesi lanjut, jawaban fallback |
 | T9 | Pengguna klik terminal | Browser difokuskan ulang < 3 s |
 | T10 | Room premium/focusMode | Tidak keluar fullscreen, tanpa paste/resize |
-| T11 | Ditutup di tengah | Resume berhasil |
+| T11 | Ditutup di tengah | Resume opt-in berhasil; tanpa resume jatuh ke Start Over |
 | T12 | Kode/tipe soal berubah | Selector fallback, error tercatat |
 
 ## Definisi selesai
@@ -95,7 +95,7 @@ Status: **SELESAI** untuk F1-F7. Hasil uji live tercatat di bawah.
 | F4 harvest/kunci/solver | Selesai; kunci hanya bila `quizId` dapat diambil, jika tidak memakai explain/AI |
 | F5 mesin jawab | Selesai; deterministik + agen halaman berbasis gambar |
 | F6 anti-cheat/ringkasan/resume | Selesai; metrik tampil dan tersimpan |
-| F7 E2E | Selesai pada 3 room; 10/10 soal terjawab pada uji terakhir |
+| F7 E2E | Selesai pada beberapa room; 10/10 soal terjawab pada uji terakhir. Resume/Start Over dan TUI manual masih tertunda |
 
 ## Estimasi urutan kerja
 F1 → F2 → F3 → F4 → F5 → F6 → F7. F0 harus selesai untuk F5.

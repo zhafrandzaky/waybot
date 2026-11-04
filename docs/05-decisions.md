@@ -68,10 +68,10 @@
 - **Alasan**: tile/resize setelah join memicu `windowResizeDetected`; fullscreen lebih awal menghilangkannya dan mengurangi `fullscreenExitDetected`.
 - **Konsekuensi**: fokus/keeper harus mempertahankan fullscreen sampai selesai; jangan pernah keluar sendiri.
 
-## ADR-15: Profil persisten, satu tab, resume sesi
+## ADR-15: Profil persisten dan satu jendela
 - **Keputusan**: profil Firefox tetap di `~/.local/share/waybot/profile`, pakai window/tab yang sudah ada, simpan `last-session.json` dan resume bila room sama (<15 menit); hambatan UI ditutup otomatis.
 - **Alasan**: join berulang memicu dialog resume, onboarding, dan risiko deteksi; uid/cookie stabil lebih manusiawi.
-- **Konsekuensi**: butuh pembersihan profil manual bila korup; resume gagal harus jatuh ke join normal tanpa crash.
+- **Konsekuensi**: proses lama dibersihkan dengan SIGTERM lalu SIGKILL; adopsi proses tidak dipakai karena sesi Marionette lama tidak andal.
 
 ## ADR-16: Agen halaman berbasis gambar memimpin jawaban
 - **Keputusan**: saat kuis berjalan, model membaca screenshot viewport penuh + snapshot DOM lalu memilih satu aksi; deterministik menjadi jalur cepat/cadangan.
@@ -97,3 +97,23 @@
 - **Keputusan**: sesi dianggap selesai bila tidak ada soal dan halaman berstatus akhir selama 15 detik, atau agen mengembalikan `done`.
 - **Alasan**: mencegah perulangan di layar survei/ringkasan setelah kuis habis.
 - **Konsekuensi**: ringkasan sesi ditulis dan browser ditutup.
+
+## ADR-21: Sesi baru secara default
+- **Keputusan**: setiap peluncuran membuat sesi baru; resume hanya dengan toggle `Resume sesi` atau `--resume`, dan hanya untuk URL game/pre-game room yang sama (<15 menit).
+- **Alasan**: resume ke halaman beranda sempat membuat program melewati join dan macet.
+- **Konsekuensi**: `last-session.json` dihapus saat start tanpa resume; layar percobaan menggantung memakai Start Over.
+
+## ADR-22: Identitas soal berbasis nomor
+- **Keputusan**: kunci kunjungan, sidik jari deduplikasi, dan kunci percobaan memakai nomor soal + teks + opsi terurut.
+- **Alasan**: soal kembar dan frame transisi memicu jawaban ganda sekaligus soal terlewat.
+- **Konsekuensi**: nomor soal wajib ikut dikirim; tanpa nomor, deduplikasi memakai teks/opsi saja.
+
+## ADR-24: Penutupan di soal terakhir
+- **Keputusan**: bila soal terakhir sudah terjawab dan tidak ada kemajuan 20 detik, sesi ditutup.
+- **Alasan**: host bisa tidak menampilkan ringkasan sehingga sesi menunggu sampai batas waktu.
+- **Konsekuensi**: ringkasan dan metrik tetap tersimpan.
+
+## ADR-23: Hitungan waktu mulai saat soal terlihat
+- **Keputusan**: timer TUI mulai pada event soal pertama, bukan saat jawaban pertama.
+- **Alasan**: room bisa berstatus running sementara soal belum tampil.
+- **Konsekuensi**: fase lobby menampilkan sisa penuh.

@@ -36,7 +36,7 @@ CLI terminal full-screen (Rust + TUI) yang mengotomatisasi sesi kuis Wayground (
 
 ## Non-fungsional
 - Tidak ada hardcode room/kode/soal/nama.
-- Gagal dengan pesan jelas; sesi bisa dipulihkan (resume).
+- Gagal dengan pesan jelas. Sesi baru secara default; resume tersedia opt-in di TUI/flag.
 - Semua soal/jawaban tersimpan sebagai JSON + ringkasan Markdown.
 - Log tidak memuat API key.
 - Dapat dijalankan ulang untuk kuis berbeda.

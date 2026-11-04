@@ -3,7 +3,7 @@
 Status: alur inti terverifikasi di room 823944, 501008, 930417, 180115, 609710, 130376, 099609. Uji terakhir 10/10 soal terjawab.
 
 ## Sudah terverifikasi
-- [x] Alur join, resume, lobby, start.
+- [x] Alur join, lobby, start (resume baru diuji sebagian).
 - [x] `getQuestions` dan skema semua tipe pada quiz uji.
 - [x] DOM MCQ/MSQ (`button.option[data-cy=option-N]`, `aria-label`, `aria-selected`).
 - [x] DOM BLANK (`input[data-cy=fib-text-input]`), OPEN (Tiptap `div.ProseMirror`), submit (`button[data-cy=submit-button]`), review + “Next question”.
@@ -33,3 +33,6 @@ Status: alur inti terverifikasi di room 823944, 501008, 930417, 180115, 609710, 
 - [x] Setelah kuis muncul layar survei/ringkasan; tanpa deteksi akhir program berputar di sana.
 - [x] Pengetikan per karakter terlalu lambat untuk esai panjang; potongan karakter diperlukan.
 - [x] `WebDriver:GetWindowHandles` mengembalikan array langsung, bukan di dalam `value`.
+- [ ] Jalur **Start Over** (resume mati) pada room dengan percobaan menggantung: harus Start Over sekali, nama diketik ulang, lalu Start.
+- [ ] Jalur **Resume attempt** (resume hidup) pada room yang sama: harus melanjutkan percobaan, bukan mengulang soal.
+- [ ] Uji TUI manual penuh (Setup → Konfirmasi) tanpa flag, termasuk panel `F3` dan toggle.

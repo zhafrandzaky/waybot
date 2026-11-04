@@ -71,7 +71,7 @@ scripts/ (nanti)
 - `Harvesting` terjadi segera setelah join dan **sebelum** start.
 - `WaitingStart` memantau DOM/room state; tidak mengirim jawaban sebelum soal tampil.
 - `Answering` hanya jalan setelah nomor soal pertama terlihat.
-- Resume: bila app crash, sesi bisa memuat kembali dan join dengan nama sama → dialog resume.
+- Sesi baru secara default. Dengan `Resume sesi` aktif, `last-session.json` dipakai hanya bila room sama, umur <15 menit, dan URL-nya game/pre-game. Tanpa resume, layar percobaan menggantung ditangani dengan **Start Over** sekali, nama diketik ulang, lalu Start.
 
 ## TUI
 Layar:
@@ -99,7 +99,7 @@ Keybinding: Tab/Shift-Tab, Enter, Esc, F1 bantuan, F2 log, Ctrl-C abort (konfirm
 1. Buka `https://wayground.com/join` (atau beranda lalu klik join).
 2. Isi kode per karakter, klik join.
 3. Tunggu salah satu: layar nama, error room, atau layar resume.
-4. Isi nama, tangani dialog duplikat: pilih resume bila nama sama.
+4. Isi nama, tangani dialog duplikat: `Resume attempt` bila toggle resume aktif, atau `Start Over` + ketik ulang nama bila tidak.
 5. Klik start, tunggu URL game dan elemen lobby.
 
 Validasi input: kode 3–11 alfanumerik; nama 1–60 karakter, trim, tanpa karakter kontrol.
@@ -267,7 +267,7 @@ stuck) sebelum uji live.
 ## Revisi browser (dikunci)
 - Fullscreen dimasukkan **sebelum** navigate/join; ukuran tidak diubah lagi setelah join.
 - Satu window/tab dipakai ulang (`WebDriver:GetWindowHandles`), bukan tab baru per run.
-- Profil persisten `~/.local/share/waybot/profile`; `last-session.json` untuk resume room sama <15 menit.
+- Profil persisten `~/.local/share/waybot/profile`; `last-session.json` hanya untuk resume opt-in.
 - Penanganan hambatan generik tiap tick: popup login, cookie/consent, tombol Continue/Got it, prompt fullscreen.
 - Kegagalan resume jatuh ke join normal.
 
