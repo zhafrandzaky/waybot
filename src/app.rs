@@ -245,6 +245,8 @@ fn run(
     let mut cursor = 0usize;
     let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut attempts: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
+    let mut answered_fingerprints: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     let mut last_dbg = Instant::now();
     let mut last_html = Instant::now();
     let mut last_agent = Instant::now() - Duration::from_secs(10);
@@ -315,7 +317,7 @@ fn run(
 
         if state.finished
             && !state.waiting_for_host
-            && !state.has_question()
+            && state.question_number.is_none()
             && last_answer_at.elapsed() > Duration::from_secs(5)
         {
             events::log(&tx, Level::Info, "quiz selesai di browser");
@@ -424,6 +426,22 @@ fn run(
         };
         if state.options.is_empty() && state.inputs.is_empty() {
             std::thread::sleep(Duration::from_millis(400));
+            continue;
+        }
+        // Fingerprint guards against id churn during transitions.
+        let mut fp_parts: Vec<String> = state
+            .options
+            .iter()
+            .map(|o| crate::util::norm_key(&o.text))
+            .collect();
+        fp_parts.sort();
+        let fingerprint = format!(
+            "{}|{}",
+            crate::util::norm_key(&state.question_text),
+            fp_parts.join("||")
+        );
+        if answered_fingerprints.contains(&fingerprint) {
+            std::thread::sleep(Duration::from_millis(300));
             continue;
         }
         if current_id.as_deref() == Some(qid.as_str()) || visited.contains(&qid) {
@@ -691,6 +709,9 @@ fn run(
 
         if acked {
             last_answer_at = Instant::now();
+            if !fingerprint.is_empty() {
+                answered_fingerprints.insert(fingerprint.clone());
+            }
             advance(&mut browser, &qid, &mut rt.metrics, &rt.store, &rt.aborted);
         } else {
             let tries = attempts.entry(qid.clone()).or_insert(0);
