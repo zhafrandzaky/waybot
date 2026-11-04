@@ -225,7 +225,6 @@ impl App {
                     self.phase = phase;
                     if phase == Phase::Answering {
                         self.screen = Screen::Quiz;
-                        self.started_at = Some(std::time::Instant::now());
                     }
                     if phase == Phase::Done {
                         self.screen = Screen::Summary;
@@ -245,7 +244,12 @@ impl App {
                     self.screen = Screen::Lobby;
                     self.phase = Phase::WaitingStart;
                 }
-                Event::Progress(progress) => self.progress = Some(progress),
+                Event::Progress(progress) => {
+                    if self.started_at.is_none() {
+                        self.started_at = Some(std::time::Instant::now());
+                    }
+                    self.progress = Some(progress);
+                }
                 Event::Metrics(line) => self.metrics = line,
                 Event::Finished(summary) => {
                     self.summary = Some(summary);
@@ -273,6 +277,7 @@ impl App {
         self.errors.clear();
         self.abort = Arc::new(AtomicBool::new(false));
         self.focus = 0;
+        self.started_at = None;
     }
 
     fn setup_key(&mut self, key: KeyEvent, _cli: &Cli) {
@@ -556,6 +561,7 @@ impl App {
             // Still start: keys/explain/heuristics can carry the session.
         }
         self.total_ms = cfg.duration_ms;
+        self.started_at = None;
         self.phase = Phase::Launching;
         self.screen = Screen::Lobby;
         self.log(
