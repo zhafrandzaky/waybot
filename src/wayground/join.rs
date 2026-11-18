@@ -188,13 +188,19 @@ pub fn join(
                 break;
             }
         }
-        if !moved {
+        let needs_name = !moved
+            || dom::eval_bool(
+                &mut browser.mn,
+                "return /please enter name|masukkan nama/i.test(document.body ? document.body.innerText : '');",
+            )
+            .unwrap_or(false);
+        if needs_name {
             log(
                 tx,
                 Level::Warn,
                 "nama belum terdaftar; ulangi isi dan Start",
             );
-            ensure_name(browser, name, tx);
+            let _ = ensure_name(browser, name, tx);
             let _ = click_start(browser);
         }
     } else if let Some(custom) = resolve_name_input(browser) {
