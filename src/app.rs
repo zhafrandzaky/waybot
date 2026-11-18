@@ -128,7 +128,12 @@ fn run(
     };
 
     events::phase(&tx, Phase::Joining);
-    let resumed = try_resume(&mut browser, &config, &data_root, &tx, &mut rt.metrics);
+    let resumed = if config.resume {
+        try_resume(&mut browser, &config, &data_root, &tx, &mut rt.metrics)
+    } else {
+        let _ = std::fs::remove_file(last_session_path(&data_root));
+        false
+    };
     if !resumed
         && let Err(e) = join::join(
             &mut browser,
