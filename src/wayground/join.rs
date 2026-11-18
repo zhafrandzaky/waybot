@@ -395,11 +395,11 @@ return 'input[type=text]';
 
 /// Force the typed name onto the pre-game screen, even when the browser remembers one.
 pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) -> bool {
-    // The field can render late; give it a moment before deciding it is absent.
+    // The field can render late; give it a real chance before deciding it is absent.
     let _ = dom::wait_exists(
         &mut browser.mn,
         selectors::NAME_INPUT,
-        Duration::from_secs(2),
+        Duration::from_secs(8),
     );
     for attempt in 0..3 {
         if let Some(css) = name_field(browser) {

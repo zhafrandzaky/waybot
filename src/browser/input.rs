@@ -84,7 +84,12 @@ return el;
 fn read_value(mn: &mut Marionette, css: &str) -> String {
     mn.script(
         &format!(
-            "const e=document.querySelector({}); return e ? (e.value !== undefined ? e.value : (e.innerText || '')) : '';",
+            r#"
+const els = [...document.querySelectorAll({})];
+const vis = (e) => {{ const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 2 && r.height > 2 && st.visibility !== 'hidden' && st.display !== 'none'; }};
+const e = els.find(vis) || els[0];
+return e ? (e.value !== undefined ? e.value : (e.innerText || '')) : '';
+"#,
             crate::browser::dom::js_str(css)
         ),
         serde_json::json!([]),
