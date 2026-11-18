@@ -56,6 +56,29 @@ fn type_chunks(mn: &mut Marionette, element: &str, text: &str) -> Result<(), MnE
     Ok(())
 }
 
+/// Resolve the first *visible* match (pages render hidden duplicates).
+fn visible_element(mn: &mut Marionette, css: &str) -> Option<String> {
+    let script = format!(
+        r#"
+const els = [...document.querySelectorAll({})];
+const vis = (e) => {{ const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 2 && r.height > 2 && st.visibility !== 'hidden' && st.display !== 'none'; }};
+const el = els.find(vis);
+if (!el) return null;
+el.scrollIntoView({{ block: 'center', inline: 'center' }});
+el.focus();
+return el;
+"#,
+        crate::browser::dom::js_str(css)
+    );
+    mn.script(&script, serde_json::json!([]))
+        .ok()
+        .and_then(|v| {
+            v.get("element-6066-11e4-a52e-4f735466cecf")
+                .and_then(|e| e.as_str())
+                .map(str::to_string)
+        })
+}
+
 fn read_value(mn: &mut Marionette, css: &str) -> String {
     mn.script(
         &format!(
@@ -71,7 +94,8 @@ fn read_value(mn: &mut Marionette, css: &str) -> String {
 
 /// Clear and type text (no clipboard), with real click focus and a value check.
 pub fn type_selector(mn: &mut Marionette, css: &str, text: &str) -> Result<(), MnError> {
-    let element = mn.find(css)?;
+    let element = visible_element(mn, css).or_else(|| mn.find(css).ok());
+    let element = element.ok_or(MnError::Protocol)?;
     let _ = click_selector(mn, css);
     mn.script(
         "arguments[0].focus(); return true;",
@@ -101,7 +125,8 @@ return true;
 
 /// Focus a contenteditable and type into it, falling back to `insertText`.
 pub fn type_contenteditable(mn: &mut Marionette, css: &str, text: &str) -> Result<(), MnError> {
-    let element = mn.find(css)?;
+    let element = visible_element(mn, css).or_else(|| mn.find(css).ok());
+    let element = element.ok_or(MnError::Protocol)?;
     let _ = click_selector(mn, css);
     mn.script(
         "const el=arguments[0]; el.focus(); const r=document.createRange(); r.selectNodeContents(el); const s=getSelection(); s.removeAllRanges(); s.addRange(r); return true;",
