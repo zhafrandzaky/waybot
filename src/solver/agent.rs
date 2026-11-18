@@ -41,6 +41,7 @@ submit, next, dismiss, wait, done. Dasarnya baca screenshot. Isi \"doubt\": true
 tanpa tombol; kalau jawaban sudah terkirim dan ada Next, klik next; jangan ulangi aksi yang sudah \
 tampak berhasil; jangan menebak selector acak; kalau halaman belum siap, wait.";
 
+#[allow(clippy::too_many_arguments)]
 pub async fn plan(
     solver: &Solver,
     snapshot: &Value,
@@ -49,8 +50,12 @@ pub async fn plan(
     history: &[String],
     images: &[String],
     suggested: &[u32],
+    goal: Option<&str>,
 ) -> Result<AgentAction, SolverError> {
     let mut user = String::new();
+    if let Some(goal) = goal {
+        user.push_str(&format!("Tugas halaman ini: {goal}\n\n"));
+    }
     if !history.is_empty() {
         user.push_str("Riwayat aksi (terbaru di bawah):\n");
         for line in history.iter().rev().take(6).rev() {

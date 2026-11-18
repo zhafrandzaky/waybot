@@ -24,12 +24,16 @@ pub enum JoinError {
     LoginRequired,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn join(
     browser: &mut Browser,
     code: &str,
     name: &str,
     resume: bool,
     tx: &Tx,
+    solver: Option<&crate::solver::deepseek::Solver>,
+    runtime: Option<&tokio::runtime::Runtime>,
+    agent: bool,
 ) -> Result<(), JoinError> {
     log(tx, Level::Info, "membuka wayground.com/join");
     browser
@@ -161,13 +165,26 @@ pub fn join(
         {
             break;
         }
-        if state.waiting_for_host || state.has_question() {
+        if state.url.contains("/join/game/") {
             return Ok(());
         }
         std::thread::sleep(Duration::from_millis(300));
     }
 
-    if dom::exists(&mut browser.mn, selectors::NAME_INPUT) {
+    let mut agent_done = false;
+    if agent && let (Some(solver), Some(runtime)) = (solver, runtime) {
+        log(tx, Level::Info, "agen menangani layar nama");
+        agent_done = pre_game_agent(browser, name, resume, tx, solver, runtime);
+        log(
+            tx,
+            if agent_done { Level::Info } else { Level::Warn },
+            format!("agen layar nama selesai: {agent_done}"),
+        );
+    }
+
+    if agent_done {
+        // The agent already pressed start; fall through to the lobby wait.
+    } else if dom::exists(&mut browser.mn, selectors::NAME_INPUT) {
         log(tx, Level::Info, "mengisi nama");
         if !ensure_name(browser, name, tx) {
             log(
@@ -371,6 +388,136 @@ fn resolve_start_button(browser: &mut Browser) -> Option<String> {
         }
     }
     None
+}
+
+fn pre_game_agent(
+    browser: &mut Browser,
+    name: &str,
+    resume: bool,
+    tx: &Tx,
+    solver: &crate::solver::deepseek::Solver,
+    runtime: &tokio::runtime::Runtime,
+) -> bool {
+    use crate::solver::agent::{ActionKind, plan};
+    let goal = format!(
+        "Isi kolom nama dengan {name:?} lalu tekan Start. {} Jika halaman menampilkan \"Please enter name\", isi ulang namanya. Jangan menekan Start selama kolom nama masih kosong.",
+        if resume {
+            "Kalau ada pilihan, pilih Resume attempt."
+        } else {
+            "Kalau ada pilihan, pilih Start Over lebih dulu, lalu isi nama."
+        }
+    );
+    let mut history: Vec<String> = Vec::new();
+    let mut images: Vec<String> = Vec::new();
+
+    for step in 0..10 {
+        if let Ok(state) = dom::snapshot(&mut browser.mn)
+            && (state.url.contains("/join/game/") || state.waiting_for_host)
+        {
+            crate::events::file_log("name-agent", "masuk game/lobby");
+            return true;
+        }
+        let Ok(snapshot) = dom::agent_snapshot(&mut browser.mn) else {
+            std::thread::sleep(Duration::from_millis(400));
+            continue;
+        };
+        if step == 0 {
+            images = browser.screenshot_data_url().into_iter().collect();
+        } else {
+            images.clear();
+        }
+        let action = match runtime.block_on(plan(
+            solver,
+            &snapshot,
+            None,
+            None,
+            &history,
+            &images,
+            &[],
+            Some(&goal),
+        )) {
+            Ok(action) => action,
+            Err(e) => {
+                crate::events::log(tx, Level::Warn, format!("agen nama: {e}"));
+                return false;
+            }
+        };
+        crate::events::file_log(
+            "name-agent",
+            &format!(
+                "step{step} {:?} idx={:?} text={:?} sel={:?}",
+                action.action, action.index, action.text, action.selector
+            ),
+        );
+        match action.action {
+            ActionKind::Done => {
+                std::thread::sleep(Duration::from_millis(600));
+                if let Ok(state) = dom::snapshot(&mut browser.mn)
+                    && (state.waiting_for_host || state.url.contains("/join/game/"))
+                {
+                    return true;
+                }
+            }
+            ActionKind::Wait => std::thread::sleep(Duration::from_millis(600)),
+            ActionKind::ClickText => {
+                let selector = action.selector.clone().unwrap_or_default();
+                let clicked = if !selector.is_empty() && dom::exists(&mut browser.mn, &selector) {
+                    input::click_selector(&mut browser.mn, &selector).is_ok()
+                } else if let Some(text) = &action.text {
+                    browser
+                        .mn
+                        .script(
+                            "const t=arguments[0].toLowerCase(); const el=[...document.querySelectorAll('button,a,[role=button]')].find(e=>((e.innerText||'').trim().toLowerCase())===t && !e.disabled); if(el){el.click(); return true;} return false;",
+                            serde_json::json!([text.to_lowercase()]),
+                        )
+                        .ok()
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+                std::thread::sleep(Duration::from_millis(650));
+                let _ = clicked;
+            }
+            ActionKind::ClickOption => {
+                if let Some(index) = action.index {
+                    let _ = input::click_selector(&mut browser.mn, &selectors::option(index));
+                    std::thread::sleep(Duration::from_millis(500));
+                }
+            }
+            ActionKind::Type => {
+                if let Some(selector) = &action.selector {
+                    let text = action.text.clone().unwrap_or_else(|| name.to_string());
+                    let _ = input::type_selector(&mut browser.mn, selector, &text);
+                    std::thread::sleep(Duration::from_millis(400));
+                }
+            }
+            ActionKind::Submit => {
+                let _ = input::click_selector(&mut browser.mn, selectors::SUBMIT_BUTTON);
+                std::thread::sleep(Duration::from_millis(400));
+            }
+            ActionKind::Next => {
+                let _ = click_start(browser);
+                std::thread::sleep(Duration::from_millis(600));
+            }
+            ActionKind::Dismiss => {
+                let _ = dom::dismiss_obstacles(&mut browser.mn);
+                let _ = dom::dismiss_login(&mut browser.mn);
+            }
+        }
+        let sig = format!(
+            "{:?}:{:?}:{:?}",
+            action.action, action.text, action.selector
+        );
+        let repeated = history.last().map(|h| h == &sig).unwrap_or(false);
+        if repeated {
+            crate::events::file_log("name-agent", "aksi berulang; coba tombol Start langsung");
+            let _ = click_start(browser);
+            std::thread::sleep(Duration::from_millis(800));
+        }
+        history.push(sig);
+    }
+    false
 }
 
 fn name_field(browser: &mut Browser) -> Option<String> {

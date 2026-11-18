@@ -91,40 +91,6 @@ fn run(
         format!("navigator.webdriver === false: {webdriver_ok:?}"),
     );
 
-    events::phase(&tx, Phase::Joining);
-    let resumed = try_resume(&mut browser, &config, &data_root, &tx, &mut rt.metrics);
-    if !resumed
-        && let Err(e) = join::join(&mut browser, &config.room, &config.name, config.resume, &tx)
-    {
-        browser.screenshot("join-fail", &rt.store);
-        let _ = browser
-            .mn
-            .script(
-                "return document.body ? document.body.innerText.slice(0, 2000) : '';",
-                json!([]),
-            )
-            .map(|v| {
-                rt.store
-                    .write_text("join-fail.txt", v.as_str().unwrap_or_default())
-            });
-        return Err(e.to_string());
-    }
-    let _ = tx.send(Event::Joined);
-    remember_session(&data_root, &config, &browser.current_url());
-
-    // Fullscreen is requested by the room; never leave it on our own.
-    if rt.fullscreen || dom::exists(&mut browser.mn, selectors::FULLSCREEN_BUTTON) {
-        let _ = focus::focus_button(&mut browser.mn);
-        rt.metrics.fullscreen_entered = true;
-    }
-
-    events::phase(&tx, Phase::Harvesting);
-    let harvested = harvest::harvest(&mut browser, &config.room, &config.name, &tx)
-        .map_err(|e| format!("harvest: {e}"))?;
-    rt.store
-        .save_questions(&harvested.questions)
-        .map_err(|e| format!("simpan soal: {e}"))?;
-
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -160,6 +126,49 @@ fn run(
         );
         None
     };
+
+    events::phase(&tx, Phase::Joining);
+    let resumed = try_resume(&mut browser, &config, &data_root, &tx, &mut rt.metrics);
+    if !resumed
+        && let Err(e) = join::join(
+            &mut browser,
+            &config.room,
+            &config.name,
+            config.resume,
+            &tx,
+            solver.as_ref(),
+            Some(&runtime),
+            rt.agent,
+        )
+    {
+        browser.screenshot("join-fail", &rt.store);
+        let _ = browser
+            .mn
+            .script(
+                "return document.body ? document.body.innerText.slice(0, 2000) : '';",
+                json!([]),
+            )
+            .map(|v| {
+                rt.store
+                    .write_text("join-fail.txt", v.as_str().unwrap_or_default())
+            });
+        return Err(e.to_string());
+    }
+    let _ = tx.send(Event::Joined);
+    remember_session(&data_root, &config, &browser.current_url());
+
+    // Fullscreen is requested by the room; never leave it on our own.
+    if rt.fullscreen || dom::exists(&mut browser.mn, selectors::FULLSCREEN_BUTTON) {
+        let _ = focus::focus_button(&mut browser.mn);
+        rt.metrics.fullscreen_entered = true;
+    }
+
+    events::phase(&tx, Phase::Harvesting);
+    let harvested = harvest::harvest(&mut browser, &config.room, &config.name, &tx)
+        .map_err(|e| format!("harvest: {e}"))?;
+    rt.store
+        .save_questions(&harvested.questions)
+        .map_err(|e| format!("simpan soal: {e}"))?;
 
     let mut answers: Vec<Answer> = harvested.answers.clone();
     let mut low = 0u32;
@@ -913,13 +922,13 @@ fn run_agent(
                 tokio::join!(
                     tokio::time::sleep(std::time::Duration::from_millis(delay)),
                     agent::plan(
-                        solver, &snapshot, question, answer, &history, &images, &suggested
+                        solver, &snapshot, question, answer, &history, &images, &suggested, None
                     )
                 )
                 .1
             }),
             None => runtime.block_on(agent::plan(
-                solver, &snapshot, question, answer, &history, &images, &suggested,
+                solver, &snapshot, question, answer, &history, &images, &suggested, None,
             )),
         };
         events::file_log(
