@@ -169,8 +169,13 @@ pub fn join(
 
     if dom::exists(&mut browser.mn, selectors::NAME_INPUT) {
         log(tx, Level::Info, "mengisi nama");
-        input::type_selector(&mut browser.mn, selectors::NAME_INPUT, name)
-            .map_err(|e| JoinError::Page(e.to_string()))?;
+        if !ensure_name(browser, name, tx) {
+            log(
+                tx,
+                Level::Warn,
+                "nama belum terverifikasi; tetap coba Start",
+            );
+        }
         std::thread::sleep(Duration::from_millis(300));
         input::click_selector(&mut browser.mn, selectors::START_BUTTON)
             .map_err(|e| JoinError::Page(e.to_string()))?;

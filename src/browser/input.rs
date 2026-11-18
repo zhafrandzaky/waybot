@@ -72,10 +72,12 @@ return el;
     );
     mn.script(&script, serde_json::json!([]))
         .ok()
-        .and_then(|v| {
-            v.get("element-6066-11e4-a52e-4f735466cecf")
+        .and_then(|v| match v {
+            serde_json::Value::String(id) => Some(id),
+            other => other
+                .get("element-6066-11e4-a52e-4f735466cecf")
                 .and_then(|e| e.as_str())
-                .map(str::to_string)
+                .map(str::to_string),
         })
 }
 
@@ -109,7 +111,9 @@ pub fn type_selector(mn: &mut Marionette, css: &str, text: &str) -> Result<(), M
     }
     // Fallback: set the value through the native setter and fire a real input event.
     let script = r#"
-const el = document.querySelector(arguments[0]);
+const els = [...document.querySelectorAll(arguments[0])];
+const vis = (e) => { const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 2 && r.height > 2 && st.visibility !== 'hidden' && st.display !== 'none'; };
+const el = els.find(vis) || els[0];
 if (!el) return false;
 el.focus();
 const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
