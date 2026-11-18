@@ -82,7 +82,18 @@ pub fn pid_alive(pid: u32) -> bool {
 }
 
 /// Kill a leftover Firefox that still holds our profile.
+fn clean_session_store(profile: &Path) {
+    let _ = fs::remove_file(profile.join("sessionstore.jsonlz4"));
+    if let Ok(entries) = fs::read_dir(profile.join("sessionstore-backups")) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 fn kill_stale(profile: &Path, data_root: &Path) {
+    // Clean before and after shutdown so a dying tab cannot be written back.
+    clean_session_store(profile);
     let mut pids: Vec<u32> = Vec::new();
     if let Ok(text) = fs::read_to_string(data_root.join("browser.json"))
         && let Ok(value) = serde_json::from_str::<serde_json::Value>(&text)
@@ -121,12 +132,7 @@ fn kill_stale(profile: &Path, data_root: &Path) {
     let _ = fs::remove_file(profile.join("lock"));
     let _ = fs::remove_file(profile.join(".parentlock"));
     // A clean start: never restore a stale tab or url.
-    let _ = fs::remove_file(profile.join("sessionstore.jsonlz4"));
-    if let Ok(entries) = fs::read_dir(profile.join("sessionstore-backups")) {
-        for entry in entries.flatten() {
-            let _ = fs::remove_file(entry.path());
-        }
-    }
+    clean_session_store(profile);
     std::thread::sleep(Duration::from_millis(400));
 }
 
