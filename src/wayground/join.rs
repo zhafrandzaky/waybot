@@ -174,6 +174,24 @@ pub fn join(
         std::thread::sleep(Duration::from_millis(300));
         input::click_selector(&mut browser.mn, selectors::START_BUTTON)
             .map_err(|e| JoinError::Page(e.to_string()))?;
+        // If the screen did not move, the name likely was not registered yet.
+        let mut moved = false;
+        for _ in 0..12 {
+            std::thread::sleep(Duration::from_millis(250));
+            if !dom::exists(&mut browser.mn, selectors::NAME_INPUT) {
+                moved = true;
+                break;
+            }
+        }
+        if !moved {
+            log(
+                tx,
+                Level::Warn,
+                "nama belum terdaftar; ulangi isi dan Start",
+            );
+            ensure_name(browser, name, tx);
+            let _ = click_start(browser);
+        }
     } else if let Some(custom) = resolve_name_input(browser) {
         log(
             tx,
@@ -357,6 +375,12 @@ return 'input[type=text]';
 
 /// Force the typed name onto the pre-game screen, even when the browser remembers one.
 pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
+    // The field can render late; give it a moment before deciding it is absent.
+    let _ = dom::wait_exists(
+        &mut browser.mn,
+        selectors::NAME_INPUT,
+        Duration::from_secs(2),
+    );
     for attempt in 0..3 {
         if let Some(css) = name_field(browser) {
             if input::type_selector(&mut browser.mn, &css, name).is_ok() {

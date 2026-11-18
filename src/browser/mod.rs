@@ -373,36 +373,64 @@ fn finish(
 
     crate::events::file_log("step", "handles start");
     // The session window can appear a moment after NewSession.
-    let mut handle: Option<String> = None;
+    let mut handles: Vec<String> = Vec::new();
     for _ in 0..24 {
-        if let Ok(value) = mn.command("WebDriver:GetWindowHandles", serde_json::json!({})) {
-            let list = value
-                .get("value")
-                .and_then(|v| v.as_array())
-                .cloned()
-                .or_else(|| value.as_array().cloned())
-                .unwrap_or_default();
-            if let Some(first) = list.first().and_then(|v| v.as_str()) {
-                handle = Some(first.to_string());
-                break;
+        handles = {
+            let mut found = Vec::new();
+            if let Ok(value) = mn.command("WebDriver:GetWindowHandles", serde_json::json!({})) {
+                let list = value
+                    .get("value")
+                    .and_then(|v| v.as_array())
+                    .cloned()
+                    .or_else(|| value.as_array().cloned())
+                    .unwrap_or_default();
+                found = list
+                    .iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect();
             }
-        }
-        if let Ok(value) = mn.command("WebDriver:GetWindowHandle", serde_json::json!({}))
-            && let Some(current) = value
-                .get("value")
-                .and_then(|v| v.as_str())
-                .or_else(|| value.as_str())
-        {
-            handle = Some(current.to_string());
+            found
+        };
+        if !handles.is_empty() {
             break;
         }
         std::thread::sleep(Duration::from_millis(250));
     }
-    crate::events::file_log("step", &format!("handle={handle:?}"));
-    let handle = match handle {
+
+    // Prefer the blank tab; anything restored must not become the target.
+    let mut chosen: Option<String> = None;
+    for handle in &handles {
+        if mn.switch_window(handle).is_err() {
+            continue;
+        }
+        let url = mn
+            .script(
+                "return String(document.location.href);",
+                serde_json::json!([]),
+            )
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default();
+        if url.starts_with("about:") {
+            chosen = Some(handle.clone());
+            break;
+        }
+    }
+    let handle = match chosen.or_else(|| handles.first().cloned()) {
         Some(handle) => handle,
         None => mn.new_tab().map_err(|e| format!("tab baru: {e}"))?,
     };
+    mn.switch_window(&handle).map_err(|e| e.to_string())?;
+    for extra in handles.iter().filter(|h| **h != handle) {
+        if mn.switch_window(extra).is_ok()
+            && mn
+                .command("WebDriver:CloseWindow", serde_json::json!({}))
+                .is_ok()
+        {
+            crate::events::file_log("step", &format!("tutup tab {extra}"));
+        }
+    }
+    mn.switch_window(&handle).map_err(|e| e.to_string())?;
     mn.switch_window(&handle).map_err(|e| e.to_string())?;
 
     let mut browser = Browser {

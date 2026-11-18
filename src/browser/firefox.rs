@@ -48,6 +48,9 @@ fn write_prefs(profile: &Path, port: u16, width: u32, height: u32) -> std::io::R
     let prefs = format!(
         r#"user_pref("marionette.port", {port});
 user_pref("browser.startup.page", 0);
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("browser.sessionstore.max_resumed_crashes", 0);
+user_pref("browser.sessionstore.restore_on_demand", false);
 user_pref("browser.startup.homepage", "about:blank");
 user_pref("browser.newtabpage.enabled", false);
 user_pref("browser.startup.homepage_override.mstone", "ignore");
@@ -117,6 +120,13 @@ fn kill_stale(profile: &Path, data_root: &Path) {
     }
     let _ = fs::remove_file(profile.join("lock"));
     let _ = fs::remove_file(profile.join(".parentlock"));
+    // A clean start: never restore a stale tab or url.
+    let _ = fs::remove_file(profile.join("sessionstore.jsonlz4"));
+    if let Ok(entries) = fs::read_dir(profile.join("sessionstore-backups")) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
     std::thread::sleep(Duration::from_millis(400));
 }
 
