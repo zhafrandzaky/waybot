@@ -51,6 +51,7 @@ user_pref("browser.startup.page", 0);
 user_pref("browser.sessionstore.resume_from_crash", false);
 user_pref("browser.sessionstore.max_resumed_crashes", 0);
 user_pref("browser.sessionstore.restore_on_demand", false);
+user_pref("browser.sessionstore.enabled", false);
 user_pref("browser.startup.homepage", "about:blank");
 user_pref("browser.newtabpage.enabled", false);
 user_pref("browser.startup.homepage_override.mstone", "ignore");
