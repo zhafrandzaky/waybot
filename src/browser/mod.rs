@@ -421,6 +421,13 @@ fn finish(
         None => mn.new_tab().map_err(|e| format!("tab baru: {e}"))?,
     };
     mn.switch_window(&handle).map_err(|e| e.to_string())?;
+    crate::events::file_log(
+        "tab",
+        &mn.script("return String(location.href);", serde_json::json!([]))
+            .ok()
+            .and_then(|v| v.as_str().map(str::to_string))
+            .unwrap_or_default(),
+    );
     for extra in handles.iter().filter(|h| **h != handle) {
         if mn.switch_window(extra).is_ok()
             && mn

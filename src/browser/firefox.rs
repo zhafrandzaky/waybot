@@ -157,6 +157,7 @@ pub fn launch(
         .arg(width.to_string())
         .arg("--height")
         .arg(height.to_string())
+        .arg("about:blank")
         .env("MOZ_CRASHREPORTER_DISABLE", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())

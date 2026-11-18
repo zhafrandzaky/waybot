@@ -212,13 +212,18 @@ pub fn join(
             "nama sudah diingat browser; mencoba Resume attempt",
         );
         if resume {
-            ensure_name(browser, name, tx);
+            let _ = ensure_name(browser, name, tx);
             let _ = click_text_button(browser, &["resume attempt", "resume", "start", "lanjut"]);
         } else {
             // Fresh run: discard the stale attempt, then join with the typed name.
             let _ = click_text_button(browser, &["start over", "mulai ulang"]);
             std::thread::sleep(Duration::from_millis(700));
-            ensure_name(browser, name, tx);
+            if !ensure_name(browser, name, tx) {
+                // The name editor may only appear after a validation attempt.
+                let _ = click_start(browser);
+                std::thread::sleep(Duration::from_millis(1200));
+                let _ = ensure_name(browser, name, tx);
+            }
             let _ = click_start(browser);
         }
         let mut tried_url = false;
@@ -249,7 +254,11 @@ pub fn join(
                     over_done = true;
                     let _ = click_text_button(browser, &["start over", "mulai ulang"]);
                     std::thread::sleep(Duration::from_millis(700));
-                    ensure_name(browser, name, tx);
+                    if !ensure_name(browser, name, tx) {
+                        let _ = click_start(browser);
+                        std::thread::sleep(Duration::from_millis(1200));
+                        let _ = ensure_name(browser, name, tx);
+                    }
                     let _ = click_start(browser);
                 } else {
                     let _ = click_start(browser);
@@ -374,7 +383,7 @@ return 'input[type=text]';
 }
 
 /// Force the typed name onto the pre-game screen, even when the browser remembers one.
-pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
+pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) -> bool {
     // The field can render late; give it a moment before deciding it is absent.
     let _ = dom::wait_exists(
         &mut browser.mn,
@@ -395,7 +404,7 @@ pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
                     .unwrap_or_default();
                 log(tx, Level::Info, format!("nama diisi ulang: {value:?}"));
                 if value.trim() == name {
-                    return;
+                    return true;
                 }
             }
         } else {
@@ -416,6 +425,7 @@ pub fn ensure_name(browser: &mut Browser, name: &str, tx: &Tx) {
             );
         }
     }
+    false
 }
 
 fn game_url_from(browser: &mut Browser) -> Option<String> {

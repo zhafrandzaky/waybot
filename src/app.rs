@@ -457,7 +457,12 @@ fn run(
                         &["start over", "mulai ulang"],
                     );
                     std::thread::sleep(Duration::from_millis(800));
-                    crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
+                    if !crate::wayground::join::ensure_name(&mut browser, &config.name, &tx) {
+                        let _ = crate::wayground::join::click_start(&mut browser);
+                        std::thread::sleep(Duration::from_millis(1200));
+                        let _ =
+                            crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
+                    }
                     let _ = crate::wayground::join::click_start(&mut browser);
                 } else {
                     crate::wayground::join::ensure_name(&mut browser, &config.name, &tx);
